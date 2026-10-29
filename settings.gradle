@@ -1,0 +1,18 @@
+pluginManagement {
+    repositories {
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        // 国内镜像，加速 Maven Central 依赖解析
+        maven {
+            name = 'Aliyun'
+            url = 'https://maven.aliyun.com/repository/public'
+        }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+// Should match your modid
+rootProject.name = 'firstmob'
