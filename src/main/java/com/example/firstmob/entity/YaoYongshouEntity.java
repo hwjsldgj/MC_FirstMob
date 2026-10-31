@@ -52,6 +52,11 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int SOUND_THRESHOLD = 3;
 	/** 窗口内"非脚步"声音低于这个值就停火（同样以 3 次为准）。 */
 	private static final int RELEASE_SOUND_COUNT = 3;
+	/** 声音分类：走路、跳跃（落地）、受击各自 5 秒只记 1 次；其它声音发生即记 1 次。 */
+	private static final int SOUND_WALK = 0;
+	private static final int SOUND_JUMP = 1;
+	private static final int SOUND_HURT = 2;
+	private static final int SOUND_OTHER = 3;
 	/** "至少攻击一次"的保证：和计数窗口一样只给 5 秒，安静下来就不再死追。 */
 	private static final int GUARANTEE_TIMEOUT_TICKS = 100;
 	/** 停火后，纯脚步声要等这么久才能再次触发（避免走两步就重新开打）。 */
@@ -60,6 +65,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int SPIT_COOLDOWN_TICKS = 34;
 	/** 吐口水最大射程（格），与羊驼默认一致。 */
 	private static final double SPIT_RANGE = 20.0D;
+	/** 近战接管距离（3 格）：这个距离内只准近战，远程（口水/声波）一律禁用。 */
+	private static final double MELEE_RANGE_SQUARED = 9.0D;
 
 	/** 5 秒内声音"超过 8 次"（即 ≥9 次）就升级成监守者声波。 */
 	private static final int SONIC_SOUND_THRESHOLD = 9;
@@ -77,10 +84,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private final Map<UUID, Deque<Long>> recentSounds = new HashMap<>();
 	/** 每个玩家的"非脚步"发声时间，用于判断还要不要继续打。 */
 	private final Map<UUID, Deque<Long>> recentLoudSounds = new HashMap<>();
-	/** 每个玩家上一次脚步 / 真噪音 / 被姚永寿打中发声的 tick，用于同一 tick 内去重。 */
-	private final Map<UUID, Long> lastStepTicks = new HashMap<>();
-	private final Map<UUID, Long> lastLoudTicks = new HashMap<>();
-	private final Map<UUID, Long> lastHitTicks = new HashMap<>();
+	/** 每个玩家上一次走路 / 跳跃 / 受击发声的 tick，用来在 5 秒窗口内各限一次。 */
+	private final Map<UUID, Long> lastWalkTicks = new HashMap<>();
+	private final Map<UUID, Long> lastJumpTicks = new HashMap<>();
+	private final Map<UUID, Long> lastHurtTicks = new HashMap<>();
 	/** 当前由"吵闹"触发攻击的目标；null 表示不是声音触发的攻击。 */
 	private UUID noiseTarget;
 	/** 本次触发还欠几次攻击（至少 1 次）。 */
@@ -100,7 +107,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 
 	/**
 	 * 玩家每发出一次音效就会调用这里（见 {@code PlayerSoundMixin}）。
-	 * 脚步/落地声、以及被姚永寿打出来的受伤音效只算"一次发声"，不维持仇恨。
+	 * 走路、跳跃（落地）、受击各算一类，5 秒内每类只记 1 次，且都不维持仇恨。
 	 */
 	public static void onPlayerSound(PlayerEntity player, SoundEvent sound) {
 		World world = player.getWorld();
@@ -112,11 +119,18 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (path.endsWith(".death")) {
 			return;
 		}
-		// 脚步、落地/跳跃声都算"移动声"：只触发，且与脚步共用同一份 5 秒限量
-		boolean step = path.endsWith(".step") || path.endsWith(".small_fall") || path.endsWith(".big_fall");
-		// 被姚永寿打出的受伤音效只记 1 次，而且不算"持续吵闹"（否则追打会自己续上，永远停不下来）
-		boolean hitByYao = path.endsWith(".hurt") && isHurtByYao(player);
-		dispatch(player, !step && !hitByYao, step);
+		// 三类声音各自独立限量：5 秒内每类只记 1 次；其它声音发生即记 1 次
+		int kind;
+		if (path.endsWith(".step")) {
+			kind = SOUND_WALK;
+		} else if (path.endsWith(".small_fall") || path.endsWith(".big_fall")) {
+			kind = SOUND_JUMP;
+		} else if (path.endsWith(".hurt")) {
+			kind = SOUND_HURT;
+		} else {
+			kind = SOUND_OTHER;
+		}
+		dispatch(player, kind);
 	}
 
 	/** 挖方块、与方块交互这些不走音效通道的动作，直接记一次"巨响"（见 {@code PlayerInteractionMixin}）。 */
@@ -125,44 +139,30 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (world.isClient() || !player.isAlive() || player.isSpectator()) {
 			return;
 		}
-		dispatch(player, true, false);
+		dispatch(player, SOUND_OTHER);
 	}
 
 	/** 把一次"声音"分发给 20 格内的所有姚永寿。 */
-	private static void dispatch(PlayerEntity player, boolean loud, boolean step) {
+	private static void dispatch(PlayerEntity player, int kind) {
 		World world = player.getWorld();
 		Box area = player.getBoundingBox().expand(HEARING_RANGE);
 		for (YaoYongshouEntity yao : world.getEntitiesByClass(YaoYongshouEntity.class, area,
 				candidate -> candidate.squaredDistanceTo(player) <= HEARING_RANGE_SQUARED)) {
-			yao.hearSoundFrom(player, loud, step);
+			yao.hearSoundFrom(player, kind);
 		}
-	}
-
-	private static boolean isHurtByYao(PlayerEntity player) {
-		DamageSource source = player.getRecentDamageSource();
-		if (source == null) {
-			return false;
-		}
-		return source.isOf(YaoYongshouSpitEntity.DAMAGE_TYPE) || source.getAttacker() instanceof YaoYongshouEntity;
 	}
 
 	/** 记账：窗口内声音够多就触发；只有"真噪音"才维持仇恨。 */
-	private void hearSoundFrom(PlayerEntity player, boolean loud, boolean step) {
+	private void hearSoundFrom(PlayerEntity player, int kind) {
 		UUID uuid = player.getUuid();
 		long now = this.getWorld().getTime();
-		// 脚步声在同一个统计窗口（5 秒）里只算 1 次，走多久都不会把计数刷上去
-		if (step) {
-			Long lastStep = this.lastStepTicks.get(uuid);
-			if (lastStep != null && now - lastStep < SOUND_WINDOW_TICKS) {
-				return;
-			}
-			this.lastStepTicks.put(uuid, now);
-		} else {
-			// 同一次发声可能在同一 tick 触发好几条音效（比如被口水打中：受伤音效 + 其它），
-			// 同一 tick、同一类只记 1 次，避免一次事件被算成好几次
-			Map<UUID, Long> lastTicks = loud ? this.lastLoudTicks : this.lastHitTicks;
+		boolean loud = kind == SOUND_OTHER;
+		// 走路 / 跳跃 / 受击：同一类在 5 秒窗口内只记 1 次；其它声音每次发生都记
+		if (!loud) {
+			Map<UUID, Long> lastTicks = kind == SOUND_WALK ? this.lastWalkTicks
+					: (kind == SOUND_JUMP ? this.lastJumpTicks : this.lastHurtTicks);
 			Long last = lastTicks.get(uuid);
-			if (last != null && last.longValue() == now) {
+			if (last != null && now - last.longValue() < SOUND_WINDOW_TICKS) {
 				return;
 			}
 			lastTicks.put(uuid, now);
@@ -188,8 +188,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (countInWindow(this.recentSounds, uuid, now) < SOUND_THRESHOLD) {
 			return;
 		}
-		if (step && now < this.stepTriggerAllowedAt) {
-			// 刚停火不久，别被脚步声立刻叫回去
+		if ((kind == SOUND_WALK || kind == SOUND_JUMP) && now < this.stepTriggerAllowedAt) {
+			// 刚停火不久，别被走路/跳跃立刻叫回去
 			return;
 		}
 		this.noiseTarget = uuid;
@@ -330,7 +330,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 		}
 		this.faceTarget(player);
 		this.sonicTicks++;
-		if (this.sonicTicks == SONIC_CHARGE_TICKS) {
+		// 贴身时只准近战：声波蓄满也不放，等目标拉开距离再打
+		if (this.sonicTicks == SONIC_CHARGE_TICKS && this.squaredDistanceTo(player) > MELEE_RANGE_SQUARED) {
 			this.fireSonicBoom(player);
 		}
 		if (this.sonicTicks >= SONIC_INTERVAL_TICKS) {
@@ -506,6 +507,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (world.isClient() || this.sonicMode) {
 			return;
 		}
+		// 近距离只准近战：3 格内不吐口水，拉开距离后才恢复远程
+		if (this.squaredDistanceTo(target) <= MELEE_RANGE_SQUARED) {
+			return;
+		}
 		double dx = target.getX() - this.getX();
 		double dz = target.getZ() - this.getZ();
 		double horizontal = Math.sqrt(dx * dx + dz * dz);
@@ -549,8 +554,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 
 	/** 只在贴身距离才触发的近战：优先级 2，但进出都由距离把关，不会压制远程吐口水。 */
 	private static class CloseMeleeGoal extends MeleeAttackGoal {
-		private static final double MELEE_RANGE_SQUARED = 9.0D;
-
 		CloseMeleeGoal(PathAwareEntity mob, double speed, boolean pauseWhenMobIdle) {
 			super(mob, speed, pauseWhenMobIdle);
 		}

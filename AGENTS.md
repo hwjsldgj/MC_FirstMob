@@ -54,21 +54,21 @@ src/client/java/com/example/firstmob/client
 
 ### 听觉索敌
 
-- 半径 **20 格**，统计窗口 **5 秒**（100 tick），触发阈值 **3 次**；脚步与落地/跳跃声（`*.step` / `*.small_fall` / `*.big_fall`）在窗口内合计最多只算 **1 次**（`lastStepTicks` 卡 `SOUND_WINDOW_TICKS`），所以光走跳几乎触发不了，得靠真实动作
+- 半径 **20 格**，统计窗口 **5 秒**（100 tick），触发阈值 **3 次**
+- **分类计数**：`SOUND_WALK`（`*.step`）、`SOUND_JUMP`（`*.small_fall` / `*.big_fall`）、`SOUND_HURT`（`*.hurt`）三类各自独立，每类 5 秒窗口内只记 **1 次**（`lastWalkTicks` / `lastJumpTicks` / `lastHurtTicks` 卡 `SOUND_WINDOW_TICKS`）；`SOUND_OTHER` 每次发生都记 1 次
+- 只有 `SOUND_OTHER` 进 `recentLoudSounds`（维持仇恨 + 声波计数），另外三类只触发
 - **触发**：窗口内声音 ≥3 次 → `setTarget(玩家)`
 - **维持**：窗口内「非脚步」声音 ≥3 次；否则停火（清目标）
 - **每次触发至少攻击一次**：锁定后 5 秒（`GUARANTEE_TIMEOUT_TICKS`）内必须补一枪，超时则作废
-- **停火冷却**：停火后 5 秒内，纯脚步声不会再触发（避免走两步就重新开打）
+- **停火冷却**：停火后 5 秒内，走路/跳跃不会再触发（避免走两步就重新开打）
 - **放弃追击**：目标超过 **25 格**立即清目标
-- 三类声音：**移动声**（脚步 + 落地/跳跃，只触发，5 秒窗口内合计只算 1 次）、**被姚永寿打出的受伤音效**（只触发，同 tick 只记 1 次）、**真噪音**（触发 + 维持 + 声波计数）
-- 被姚永寿打出的受伤音效**不能**进 `recentLoudSounds`：否则"打中→受伤音效→维持仇恨"会自我续期，玩家光疾跑也停不下来
-- 去重：脚步按"距上次计数满 5 秒"卡（`lastStepTicks`），真噪音和受击各自按 tick 卡（`lastLoudTicks` / `lastHitTicks`）
-- 挖掘 / 放方块通过 `ServerPlayerInteractionManager` 的 mixin 记为一次"巨响"（`loud = true`）
+- 三类受限声音（走、跳、受击）**不能**进 `recentLoudSounds`：否则"打中→受伤音效→维持仇恨"会自我续期，玩家光跑也停不下来
+- 挖掘 / 放方块通过 `ServerPlayerInteractionManager` 的 mixin 记为一次 `SOUND_OTHER`（维持仇恨、可升声波）
 - **25 格放弃、安静停火只在普通模式生效**；声波模式有自己的 40 格规则，见下
 
 ### 声波（监守者）
 
-- **触发**：同一玩家在 20 格内、5 秒窗口内**非脚步**声音 **≥9 次**（"超过 8 次"）→ `enterSonicMode`；脚步不计入（否则走路几秒就误触发）
+- **触发**：同一玩家在 20 格内、5 秒窗口内 `SOUND_OTHER`（真噪音）**≥9 次** → `enterSonicMode`；走/跳/受击都不计入
 - **互斥**：`sonicMode` 为 true 时 `shootAt` 立刻返回，不吐口水；吐口水阶段攒够 9 次会升级
 - **节拍**：进入后蓄力 34 tick（`SONIC_CHARGE_TICKS`）开炮，之后每 160 tick（`SONIC_INTERVAL_TICKS`，8 秒）一次；每 tick `faceTarget`
 - **停止条件**：只有目标**离开 40 格**（`SONIC_RANGE`）或**死亡**才 `exitSonicMode`；期间不看"安静停火"，也不走 25 格放弃
@@ -78,10 +78,11 @@ src/client/java/com/example/firstmob/client
 ### 攻击
 
 - 远程：`ProjectileAttackGoal`，优先级 3，射程 20 格，**冷却 34 tick**（羊驼默认 40，减 0.3 秒）
-- 首发：`setTarget` 里若目标可见且在 20 格内，**立即** `shootAt` 一次，不等开火倒计时
+- 首发：`setTarget` 里若目标可见、在 20 格内且**不在近战距离**，立即 `shootAt` 一次，不等开火倒计时
 - 近战：`CloseMeleeGoal`，优先级 2，**3 格内**接管（`canStart` 与 `shouldContinue` 都卡 3 格），被贴脸打会立刻还手，目标一退出就还给远程
+- **3 格内禁用一切远程**：`shootAt` 判 `MELEE_RANGE_SQUARED` 直接返回；声波的蓄满判定同样被这个距离挡掉（`updateSonicMode`），拉开距离后才恢复
 - 开火前把 `yaw`/`bodyYaw`/`headYaw`/`pitch` 全部转向目标
-- **声波模式期间不开火吐口水**：`shootAt` 首行判断 `sonicMode` 直接 return；`setTarget` 的首发也带同样判断；但**近战照常**，贴脸仍会揍人
+- **声波模式期间不开火吐口水**：`shootAt` 首行判断 `sonicMode` 直接 return；但**近战照常**
 - 同类不互殴：`setTarget` 过滤 `YaoYongshouEntity`，口水命中同类也不结算伤害
 
 ## 踩过的坑（别改回去）
@@ -104,8 +105,9 @@ src/client/java/com/example/firstmob/client
    /summon firstmob:yao_yongshou ~ ~ ~
    /give @s firstmob:yao_yongshou_spawn_egg
    ```
-4. 听觉验证：在 20 格内走路（最多只贡献 1 次声音）、吃东西、挖方块；安静 5 秒应停火；跑出 25 格应放弃
-5. 声波验证：5 秒内连发 9 次**非脚步**声音（连挖 9 个方块 / 连放 9 个方块），应只出粒子束与 `entity.warden.sonic_boom`、不再吐口水；单纯走路不应触发；跑出 40 格才停
+4. 听觉验证：在 20 格内走路/跳跃（各只贡献 1 次声音）、吃东西、挖方块；安静 5 秒应停火；跑出 25 格应放弃
+5. 声波验证：5 秒内连发 9 次 `SOUND_OTHER`（连挖 9 个方块 / 连放 9 个方块），应只出粒子束与 `entity.warden.sonic_boom`、不再吐口水；单纯走跳不应触发；跑出 40 格才停
+6. 近战验证：贴到 3 格内只挨揍、不放口水/声波；退到 3 格外立刻恢复远程
 
 ## 提交规范
 
