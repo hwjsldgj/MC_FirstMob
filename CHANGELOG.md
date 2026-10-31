@@ -32,6 +32,7 @@
 - 新增 `docs/API.md`：接口文档（注册 ID、Java 成员与契约、Mixin 注入点、资源与数据契约、稳定度分级、扩展指南）
 - 新增 `docs/README.md`：文档索引、阅读顺序与维护规则（SPEC 作为行为唯一事实来源）
 - 重写 `README.md`：面向玩家的玩法速览 + 文档导航，实现细节移交 SPEC / API
+- `README.md` 增加「支持的版本」表（与 `fabric.mod.json` 的 `depends` 同步：Minecraft `~1.21.1`、Fabric Loader ≥ 0.20.1、Java ≥ 21、双端安装），玩法速览按基础 / 血量阶段 / 战斗 / 攻击距离速查 / 其他重排并补齐机制
 - 精简 `AGENTS.md`：删除与 SPEC 重复的行为细节，保留环境、结构、不变量、踩坑、验证与提交规范
 
 ## 1.0.0
