@@ -43,7 +43,9 @@ import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
@@ -132,6 +134,17 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final float LOCK_HEALTH_RATIO = 0.6F;
 	/** 解除锁定：健康满血且这么久（600 tick = 30 秒）没被玩家打中。 */
 	private static final int LOCK_RELEASE_NO_DAMAGE_TICKS = 600;
+	/** 空闲跟随：20 格内始终注视玩家，超过 16 格就迈步跟上。 */
+	private static final double IDLE_LOOK_RANGE = 20.0D;
+	private static final double IDLE_FOLLOW_START_SQUARED = 16.0D * 16.0D;
+	/** 空闲跟随：超过 25 格直接传送到玩家侧前方约 15 格。 */
+	private static final double IDLE_TELEPORT_DISTANCE_SQUARED = 25.0D * 25.0D;
+	private static final double IDLE_TELEPORT_RADIUS = 15.0D;
+	/** 传送候选角度（相对玩家朝向，0 = 正前方）：只用侧前方/侧方/后方，绝不正前方。 */
+	private static final double[] TELEPORT_ANGLES = { 45.0D, -45.0D, 70.0D, -70.0D, 90.0D, -90.0D, 135.0D, -135.0D,
+			180.0D };
+	/** 传送失败后的重试间隔，避免每 tick 全图找落点。 */
+	private static final int TELEPORT_RETRY_TICKS = 20;
 	/** 低于 20% 血时攻击冷却缩短 20%（34→27 tick、160→128 tick、蓄力 34→27）。 */
 	private static final double ATTACK_BOOST_COOLDOWN_FACTOR = 0.8D;
 	/** 近战挥击动画时长（10 tick = 0.5 秒）：只记开始时的 age，渲染端按插值后的 age 自己算进度。 */
@@ -180,6 +193,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private long nextSpitTick;
 	/** 是否正挂着"追击加速"（速度 II）；解除时要换回 Boss 形态自带的永久速度 I。 */
 	private boolean speedBoosted;
+	/** 下一次允许尝试传送的世界时间。 */
+	private long nextTeleportTick;
 	/** Boss 血条：标题取实体显示名，进度跟随当前血量，只发给正在追踪本实体的玩家。 */
 	private final ServerBossBar bossBar = new ServerBossBar(this.getDisplayName(), BossBar.Color.RED,
 			BossBar.Style.PROGRESS);
@@ -394,6 +409,14 @@ public class YaoYongshouEntity extends LlamaEntity {
 			}
 			this.lockTarget = null;
 		}
+		return this.nearestPlayer();
+	}
+
+	/** 最近的存活玩家（旁观者不算），没有则 null。 */
+	private PlayerEntity nearestPlayer() {
+		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
+			return null;
+		}
 		PlayerEntity nearest = null;
 		double nearestSquared = Double.MAX_VALUE;
 		for (ServerPlayerEntity player : serverWorld.getPlayers()) {
@@ -407,6 +430,97 @@ public class YaoYongshouEntity extends LlamaEntity {
 			}
 		}
 		return nearest;
+	}
+
+	// ------------------------------------------------------------------
+	// 空闲跟随：20 格内注视玩家，>16 格跟上，>25 格传送到侧前方
+	// ------------------------------------------------------------------
+
+	/** 空闲（无目标、未锁定）时始终保持与玩家 20 格内，并盯着玩家看。 */
+	private void updateIdleFollow(long now) {
+		if (this.lockMode || this.getTarget() != null) {
+			return;
+		}
+		PlayerEntity player = this.nearestPlayer();
+		if (player == null) {
+			return;
+		}
+		double distanceSquared = this.squaredDistanceTo(player);
+		if (distanceSquared <= IDLE_LOOK_RANGE * IDLE_LOOK_RANGE) {
+			// 20 格内始终注视玩家（LookAtEntityGoal 只有 8 格，覆盖不到这么远）
+			this.getLookControl().lookAt(player, 30.0F, 30.0F);
+		}
+		if (distanceSquared > IDLE_TELEPORT_DISTANCE_SQUARED) {
+			if (now >= this.nextTeleportTick) {
+				this.nextTeleportTick = now + TELEPORT_RETRY_TICKS;
+				if (this.teleportNearPlayer(player)) {
+					return;
+				}
+			}
+		}
+		if (distanceSquared > IDLE_FOLLOW_START_SQUARED) {
+			// 玩家走远了就迈步跟上；16 格以内不挤过去（传送失败时也靠走的过去）
+			this.getNavigation().startMovingTo(player, 1.0D);
+		} else if (distanceSquared < 9.0D) {
+			this.getNavigation().stop();
+		}
+	}
+
+	/**
+	 * 传送到玩家侧前方约 15 格。
+	 * <p>
+	 * 候选角度按玩家朝向偏移 ±45° 起步，全部避开正前方（0°），避免贴脸出现在玩家视线正中央；
+	 * 每个候选点上下扫描 8 格找"脚下实心、脚和头两格空气"的落点。
+	 */
+	private boolean teleportNearPlayer(PlayerEntity player) {
+		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
+			return false;
+		}
+		double baseYaw = Math.toRadians(player.getYaw());
+		for (double offsetDegrees : TELEPORT_ANGLES) {
+			double angle = baseYaw + Math.toRadians(offsetDegrees);
+			double x = player.getX() - Math.sin(angle) * IDLE_TELEPORT_RADIUS;
+			double z = player.getZ() + Math.cos(angle) * IDLE_TELEPORT_RADIUS;
+			Vec3d landing = this.findLandingSpot(serverWorld, x, player.getY(), z);
+			if (landing != null) {
+				this.getNavigation().stop();
+				this.requestTeleport(landing.getX(), landing.getY(), landing.getZ());
+				this.setVelocity(0.0D, 0.0D, 0.0D);
+				debug("TELEPORT side-front angle={} to {}", (int) offsetDegrees, landing);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** 在给定水平坐标上下扫 8 格，找可站立的落点；找不到返回 null。 */
+	private Vec3d findLandingSpot(ServerWorld world, double x, double baseY, double z) {
+		BlockPos.Mutable pos = new BlockPos.Mutable();
+		int startY = MathHelper.floor(baseY) + 8;
+		int endY = MathHelper.floor(baseY) - 8;
+		// Boss 形态 2 倍体型高 3.9 格，落点必须按实际身高留空
+		int requiredHeight = MathHelper.ceil(this.getHeight());
+		for (int y = startY; y >= endY; y--) {
+			pos.set(x, y, z);
+			long chunkPos = ChunkPos.toLong(pos.getX() >> 4, pos.getZ() >> 4);
+			if (!world.isChunkLoaded(chunkPos)) {
+				continue;
+			}
+			if (!world.getBlockState(pos.down()).isSolidBlock(world, pos.down())) {
+				continue;
+			}
+			boolean clear = true;
+			for (int i = 0; i < requiredHeight; i++) {
+				if (!world.getBlockState(pos.up(i)).isAir()) {
+					clear = false;
+					break;
+				}
+			}
+			if (clear) {
+				return new Vec3d(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D);
+			}
+		}
+		return null;
 	}
 
 	/** 距离 >20 格：蓄力后放声波，节拍与噪音声波一致（<20% 血时也缩短 20%）。 */
@@ -712,6 +826,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 				}
 			}
 			this.updateNoiseAggro(now);
+			this.updateIdleFollow(now);
 		}
 		if (now % 100L == 0L) {
 			pruneOutdated(this.recentSounds, now);
