@@ -134,10 +134,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int LOCK_RELEASE_NO_DAMAGE_TICKS = 600;
 	/** 低于 20% 血时攻击冷却缩短 20%（34→27 tick、160→128 tick、蓄力 34→27）。 */
 	private static final double ATTACK_BOOST_COOLDOWN_FACTOR = 0.8D;
-	/** 近战挥击动画时长（10 tick = 0.5 秒）：僵尸式抬臂→抡下，由模型读取。 */
-	private static final int ATTACK_ANIM_TICKS = 10;
-	/** 剩余挥击 tick，同步给客户端；0 表示不在挥击。 */
-	private static final TrackedData<Integer> ATTACK_ANIM = DataTracker.registerData(YaoYongshouEntity.class,
+	/** 近战挥击动画时长（10 tick = 0.5 秒）：只记开始时的 age，渲染端按插值后的 age 自己算进度。 */
+	public static final int ATTACK_ANIM_TICKS = 10;
+	/** 挥击开始时的实体 age；-1 表示没在挥击。用 age 而不是倒计时，客户端可以按帧插值，不会一格一格跳。 */
+	private static final TrackedData<Integer> ATTACK_START_AGE = DataTracker.registerData(YaoYongshouEntity.class,
 			TrackedDataHandlerRegistry.INTEGER);
 
 	/** 每个玩家的全部发声时间（含脚步），用于判断"吵不吵"。 */
@@ -193,13 +193,24 @@ public class YaoYongshouEntity extends LlamaEntity {
 	@Override
 	protected void initDataTracker(DataTracker.Builder builder) {
 		super.initDataTracker(builder);
-		builder.add(ATTACK_ANIM, 0);
+		builder.add(ATTACK_START_AGE, -1);
 	}
 
-	/** 挥击动画进度：0 = 待机，0~1 = 抬臂→抡下→回位；客户端模型据此播放僵尸式攻击。 */
-	public float getAttackAnimationProgress() {
-		int remaining = this.dataTracker.get(ATTACK_ANIM);
-		return remaining <= 0 ? 0.0F : 1.0F - (float) remaining / ATTACK_ANIM_TICKS;
+	/**
+	 * 挥击动画进度：0 = 待机，0~1 = 抬臂→抡下→回位。
+	 *
+	 * @param animationProgress 渲染端传入的 `age + tickDelta`，用它算时间差才能按帧插值
+	 */
+	public float getAttackAnimationProgress(float animationProgress) {
+		int startAge = this.dataTracker.get(ATTACK_START_AGE);
+		if (startAge < 0) {
+			return 0.0F;
+		}
+		float elapsed = animationProgress - startAge;
+		if (elapsed < 0.0F || elapsed > ATTACK_ANIM_TICKS) {
+			return 0.0F;
+		}
+		return elapsed / ATTACK_ANIM_TICKS;
 	}
 
 	// ------------------------------------------------------------------
@@ -660,7 +671,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 		}
 		this.updateFormState();
 		this.updateBossBar();
-		this.tickAttackAnimation();
 		long now = world.getTime();
 		if (this.lockMode) {
 			// 锁定模式：安静停火、25 格放弃、反击超时这些脱战规则全部让位
@@ -1037,8 +1047,14 @@ public class YaoYongshouEntity extends LlamaEntity {
 	public boolean tryAttack(Entity target) {
 		boolean hit = super.tryAttack(target);
 		if (hit) {
-			// 命中才挥臂：原版僵尸的挥击由 MeleeAttackGoal 发包，这里改用数据同步自己计时，保证动画一定播
-			this.dataTracker.set(ATTACK_ANIM, ATTACK_ANIM_TICKS);
+			// 命中瞬间记录 age：客户端按渲染插值算进度，动画从这一 tick 平滑开始
+			this.dataTracker.set(ATTACK_START_AGE, this.age);
+			// 铁傀儡式击退：只往上顶 0.4 × (1 - 击退抗性)，水平方向不额外加（原版 golem 没有 attack_knockback 加成）
+			if (target instanceof LivingEntity living) {
+				double resistance = Math.max(0.0D,
+						1.0D - living.getAttributeValue(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE));
+				living.setVelocity(living.getVelocity().add(0.0D, 0.4D * resistance, 0.0D));
+			}
 			if (this.guaranteedShots > 0 && target instanceof PlayerEntity player
 					&& player.getUuid().equals(this.noiseTarget)) {
 				this.guaranteedShots--;
@@ -1046,14 +1062,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.countRevengeShot();
 		}
 		return hit;
-	}
-
-	/** 挥击动画计时：只负责递减，命中时由 {@link #tryAttack} 重置。 */
-	private void tickAttackAnimation() {
-		int remaining = this.dataTracker.get(ATTACK_ANIM);
-		if (remaining > 0) {
-			this.dataTracker.set(ATTACK_ANIM, remaining - 1);
-		}
 	}
 
 	/** 只在贴身距离才触发的近战：优先级 2，进出都由距离把关，不会压制远程吐口水。 */

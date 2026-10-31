@@ -11,8 +11,9 @@ import net.minecraft.util.math.MathHelper;
  * 僵尸外形：沿用 64×64 的人形骨架（{@code EntityModelLayers.ZOMBIE}）。
  * <p>
  * 待机时手臂复用原版 {@link CrossbowPosing#meleeAttack}（僵尸双臂前伸）；
- * 攻击时按实体同步过来的 {@code ATTACK_ANIM} 计时播一段自定义抡臂——抬到头顶再砸下，
- * 比原版僵尸 6 tick 的微幅摆动更容易看清，也更接近铁傀儡的双臂砸地。
+ * 近战命中后按实体的 {@code ATTACK_START_AGE} 播一段抡臂：快速抬到头顶 → 砸下 → 回位。
+ * 进度用渲染端插值后的 {@code animationProgress} 计算，逐帧连续，不会像按 tick 跳变那样卡顿；
+ * 砸下安排在最前 1/3，命中伤害与视觉冲击基本同帧。
  * <p>
  * 原版 {@code ZombieEntityModel} / {@code IronGolemEntityModel} 的泛型都绑死在
  * {@code ZombieEntity} / {@code IronGolemEntity} 上，无法直接套到本实体，所以这里只借骨架与姿势函数。
@@ -24,9 +25,9 @@ public class YaoYongshouModel extends BipedEntityModel<YaoYongshouEntity> {
 	private static final float RAISED_ARM_PITCH = -2.4085544F;
 	/** 抡到底（-20°）。 */
 	private static final float SLAM_ARM_PITCH = -0.3490658F;
-	/** 0~0.35 抬臂，0.35~0.7 抡下，0.7~1 回位。 */
-	private static final float RAISE_PORTION = 0.35F;
-	private static final float SLAM_PORTION = 0.7F;
+	/** 0~0.12 抬臂，0.12~0.35 抡下（命中后约 0.12 秒到位），0.35~1 回位。 */
+	private static final float RAISE_PORTION = 0.12F;
+	private static final float SLAM_PORTION = 0.35F;
 
 	public YaoYongshouModel(ModelPart root) {
 		super(root);
@@ -36,7 +37,7 @@ public class YaoYongshouModel extends BipedEntityModel<YaoYongshouEntity> {
 	public void setAngles(YaoYongshouEntity entity, float limbAngle, float limbDistance, float animationProgress,
 			float headYaw, float headPitch) {
 		super.setAngles(entity, limbAngle, limbDistance, animationProgress, headYaw, headPitch);
-		float swing = entity.getAttackAnimationProgress();
+		float swing = entity.getAttackAnimationProgress(animationProgress);
 		if (swing <= 0.0F) {
 			// 待机：僵尸双臂前伸，走路时带一点原版摆动
 			CrossbowPosing.meleeAttack(this.leftArm, this.rightArm, false, this.handSwingProgress, animationProgress);
