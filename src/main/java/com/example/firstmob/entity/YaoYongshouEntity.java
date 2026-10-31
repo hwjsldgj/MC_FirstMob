@@ -778,7 +778,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.guaranteedShots = 0;
 	}
 
-	/** 声波模式下每 tick 走一遍：20~40 格才蓄力开炮，20 格内交回口水/近战；<20% 血时蓄力与循环缩短 20%。 */
+	/** 声波模式下每 tick 走一遍：蓄力 34 tick → 开炮 → 冷却到 160 tick 再来（<20% 血时各缩短 20%）。 */
 	private void updateSonicMode(long now) {
 		// 直接按 UUID 找锁定目标：中途被别的怪抢仇恨也不会退出声波模式
 		PlayerEntity player = this.noiseTarget == null ? null : this.getWorld().getPlayerByUuid(this.noiseTarget);
@@ -790,18 +790,13 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (this.getTarget() != player) {
 			this.setTarget(player);
 		}
-		double distanceSquared = this.squaredDistanceTo(player);
-		if (distanceSquared <= SPIT_RANGE * SPIT_RANGE) {
-			// 20 格内是口水/近战的区间：声波不蓄力也不开炮（shootAt 已不再被 sonicMode 拦住）
-			this.sonicTicks = 0;
-			return;
-		}
 		if (this.sonicTicks == 0) {
 			this.playSound(ModSounds.SONIC_CHARGE, 3.0F, 1.0F);
 		}
 		this.faceTarget(player);
 		this.sonicTicks++;
-		if (this.sonicTicks == this.sonicChargeTicks()) {
+		// 声波模式是"9 次噪音"换来的：除贴身近战外一律用它，不再按 20 格切回口水
+		if (this.sonicTicks == this.sonicChargeTicks() && this.squaredDistanceTo(player) > this.meleeRangeSquared()) {
 			this.fireSonicBoom(player);
 		}
 		if (this.sonicTicks >= this.sonicIntervalTicks()) {
@@ -995,7 +990,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	@Override
 	public void shootAt(LivingEntity target, float pullProgress) {
 		World world = this.getWorld();
-		if (world.isClient()) {
+		// 声波模式下声波替代口水：普通模式（未锁定）由噪音决定，锁定模式则不会进入 sonicMode
+		if (world.isClient() || this.sonicMode) {
 			return;
 		}
 		// 近距离只准近战：普通模式 3 格、锁定模式 5 格，拉不开距离就不吐口水
