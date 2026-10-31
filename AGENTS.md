@@ -1,16 +1,18 @@
 # AGENTS.md
 
-给后续接手本项目的 AI / 协作者的注意事项。行为约定写在这里，改代码前先读一遍。
+给后续接手本项目的 AI / 协作者的工程约定。**改代码前先读这一页**；行为细节不在本文件重复，一律以 [docs/SPEC.md](docs/SPEC.md) 为准。
 
-## 项目是什么
+## 项目
 
-Minecraft **1.21.1 Fabric** 模组，新增生物「姚永寿」（`firstmob:yao_yongshou`）与对应刷怪蛋。
+Minecraft **1.21.1 Fabric** 模组，新增生物「姚永寿」（`firstmob:yao_yongshou`）与刷怪蛋。
 
-- **外形**：村民（`VillagerResemblingModel` + 原版村民贴图），只是借模型，不继承村民实体
-- **行为**：`extends LlamaEntity`（羊驼），但**只沿用普通寻路 + 吐口水**；商队、绑定/骑乘、繁殖、诱惑、跟随父母等目标全部移除
-- **没有幼年形态**：`isBaby()` 恒 false、`setBaby()` 空实现；不能繁殖、不能喂食/驯服
-- **口水**：自定义弹体 `YaoYongshouSpitEntity`，4 点伤害 + 击退，自定义伤害类型 `firstmob:yao_spit`
-- **刷怪蛋**：自定义贴图的平面模型（无厚度、正反共面）
+- 外形用村民模型（`VillagerResemblingModel` + 原版贴图），但不继承村民实体
+- 行为 `extends LlamaEntity`，只沿用普通寻路 + 吐口水；商队、骑乘、繁殖、诱惑、跟随父母全部移除
+- 没有幼年形态，不能繁殖 / 喂食 / 驯服
+- 口水是自定义弹体 `YaoYongshouSpitEntity`，4 点伤害 + 击退，伤害类型 `firstmob:yao_spit`
+- 刷怪蛋是自定义贴图的平面模型（无厚度、正反共面）
+
+行为规则、状态机与数值：**[docs/SPEC.md](docs/SPEC.md)**；注册 ID、Java 接口、资源契约：**[docs/API.md](docs/API.md)**。
 
 ## 环境与命令
 
@@ -19,74 +21,63 @@ Minecraft **1.21.1 Fabric** 模组，新增生物「姚永寿」（`firstmob:yao
 | JDK | `D:\pcl\jdk-21`（`gradle.properties` 的 `org.gradle.java.home` 指向它） |
 | Gradle 缓存 | `D:\pcl\gradle_cache`（`GRADLE_USER_HOME`） |
 | Gradle | 9.4.0（Loom 1.15.5 的 `-remap` 插件要求 9.x） |
+| 测试世界 | `run/saves/新的世界` |
 
 ```powershell
 $env:JAVA_HOME='D:\pcl\jdk-21'
 $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 .\gradlew.bat build     # 产物 build/libs/firstmob-1.0.0.jar
-.\gradlew.bat runClient # 开发客户端，测试世界 run/saves/新的世界
+.\gradlew.bat runClient # 开发客户端，日志 run/logs/latest.log
 ```
 
-国内网络镜像已写进仓库：阿里云 Maven（`build.gradle`）、BMCLAPI（`gradle.properties` 的 `loom_*`）、腾讯云 Gradle 发行包。
+国内镜像已写进仓库：阿里云 Maven（`build.gradle`）、BMCLAPI（`gradle.properties` 的 `loom_*`）、腾讯云 Gradle 发行包。
 
-> DSH 沙箱下 `D:\pcl` 属于受限写入区，跑 gradle / git / 改 `run/` 需要 `danger-full-access`；`write`/`edit` 工具不受影响。
+> 沙箱若拦截 gradle / git 对 `D:\pcl` 的写入，用 `danger-full-access` 重试一次；`write` / `edit` 工具不受影响。
 
 ## 代码结构
 
 ```
 src/main/java/com/example/firstmob
-├── Firstmob.java                   # 入口：注册实体/物品、加入创造页签、日志
+├── Firstmob.java                   # 入口：注册实体/物品/音效、加入创造页签
 ├── entity
-│   ├── YaoYongshouEntity.java      # 羊驼行为 + 听觉索敌 + 吐口水弹道 + 声波
+│   ├── YaoYongshouEntity.java      # 羊驼行为 + 听觉 + 口水 + 声波 + 反击
 │   └── YaoYongshouSpitEntity.java  # 口水：伤害、击退、同类免伤
 ├── mixin
-│   ├── PlayerSoundMixin.java       # 拦 PlayerEntity#playSound，收集玩家音效
-│   └── PlayerInteractionMixin.java # 挖/放方块也算"弄出动静"
+│   ├── PlayerSoundMixin.java       # 拦 PlayerEntity#playSound
+│   └── PlayerInteractionMixin.java # 挖 / 交互方块也算"弄出动静"
 └── registry
     ├── ModEntities.java            # 实体类型 + 属性
     ├── ModItems.java               # 刷怪蛋
-    └── ModSounds.java              # 自定义音效事件（复用原版声音文件，换字幕）
+    └── ModSounds.java              # 自定义音效事件（转发原版声音，换字幕）
 src/client/java/com/example/firstmob/client
 ├── FirstmobClient.java             # 客户端入口（只注册渲染器）
 └── YaoYongshouRenderer.java        # 村民模型渲染器
+docs/                               # SPEC / API / 文档索引
 ```
 
-## 行为规则（当前版本，改动需同步 README/CHANGELOG）
+## 不变量（改完逐条确认）
 
-### 听觉索敌
+1. `targetSelector` 始终为空；反击只由 `damage()` 计数，不靠 `RevengeGoal`。
+2. 同类永不被 `setTarget` 接受，口水永不伤害同类。
+3. `sonicMode` 为 true 时 `shootAt` 永不生成口水。
+4. 距离 ≤ 3 格不生成口水，声波也不结算（蓄力照常推进）。
+5. 目标死亡当 tick 清空目标与攻击状态。
+6. 不存在幼年形态：`isBaby()` false、`getBreedingAge()` 0、`createChild()` null。
+7. 音效事件必须用 `{"type": "event"}` 转发原版事件。
+8. 刷怪蛋模型不能写 `"parent": "item/generated"`。
+9. 口水伤害类型必须 `scaling: never`。
+10. 反击计数只在 `shootAt` / `tryAttack` 命中时扣减。
 
-- 半径 **20 格**，统计窗口 **5 秒**（100 tick），触发阈值 **3 次**
-- **分类计数**：`SOUND_WALK`（`*.step`）、`SOUND_JUMP`（`*.small_fall` / `*.big_fall`）、`SOUND_HURT`（`*.hurt`）三类各自独立，每类 5 秒窗口内只记 **1 次**（`lastWalkTicks` / `lastJumpTicks` / `lastHurtTicks` 卡 `SOUND_WINDOW_TICKS`）；`SOUND_OTHER` 每次发生都记 1 次
-- 只有 `SOUND_OTHER` 进 `recentLoudSounds`（触发 + 维持 + 声波计数），另外三类只记录不参与判定
-- 三类受限声音（走、跳、受击）**不能**进 `recentLoudSounds`：否则"打中→受伤音效→维持仇恨"会自我续期，玩家光跑也停不下来
-- **触发**：窗口内 `SOUND_OTHER`（真噪音）≥3 次 → `setTarget(玩家)`；走/跳/受击**只记录、不触发**
-- **维持**：窗口内 `SOUND_OTHER` ≥3 次；否则停火（清目标）
-- **每次触发至少攻击一次**：锁定后 5 秒（`GUARANTEE_TIMEOUT_TICKS`）内必须补一枪，超时则作废
-- **放弃追击**：目标超过 **25 格**立即清目标
-- 挖掘 / 放方块通过 `ServerPlayerInteractionManager` 的 mixin 记为一次 `SOUND_OTHER`（触发 + 维持 + 可升声波）
-- **25 格放弃、安静停火只在普通模式生效**；声波模式有自己的 40 格规则，见下
+完整的判定条件、阈值与验收用例见 [docs/SPEC.md](docs/SPEC.md)。
 
-### 声波（监守者）
+## 代码规范
 
-- **触发**：同一玩家在 20 格内、5 秒窗口内 `SOUND_OTHER`（真噪音）**≥9 次** → `enterSonicMode`；走/跳/受击都不计入
-- **互斥**：`sonicMode` 为 true 时 `shootAt` 立刻返回，不吐口水；吐口水阶段攒够 9 次会升级
-- **节拍**：进入后蓄力 34 tick（`SONIC_CHARGE_TICKS`）开炮，之后每 160 tick（`SONIC_INTERVAL_TICKS`，8 秒）一次；每 tick `faceTarget`
-- **停止条件**：只有目标**离开 40 格**（`SONIC_RANGE`）或**死亡**才 `exitSonicMode`；期间不看"安静停火"，也不走 25 格放弃
-- **解除后**：清掉该玩家的 `recentSounds` / `recentLoudSounds`，需要重新攒够 9 次
-- **实现**：1.21.1 没有独立的声波实体（原版是 `SonicBoomTask` 里直接结算），这里照抄同一套：沿射线 `ParticleTypes.SONIC_BOOM` 粒子 + `ModSounds.SONIC_BOOM`（自定义事件，复用原版声音文件，字幕「姚永寿：音波尖啸」）+ `damageSources.sonicBoom(this)` 10 点 + `addVelocity(dir * 2.5 * (1-击退抗性))`
-- 音效事件注册在 `ModSounds`，`assets/firstmob/sounds.json` 把它们指到原版声音文件；字幕/死亡信息文案在 `assets/firstmob/lang/*.json`
-
-### 攻击
-
-- 远程：`ProjectileAttackGoal`，优先级 3，射程 20 格，**冷却 34 tick**（羊驼默认 40，减 0.3 秒）
-- 首发：`setTarget` 里若目标可见、在 20 格内且**不在近战距离**，立即 `shootAt` 一次，不等开火倒计时
-- 近战：`CloseMeleeGoal`，优先级 2，**3 格内**接管（`canStart` 与 `shouldContinue` 都卡 3 格），被贴脸打会立刻还手，目标一退出就还给远程
-- **3 格内禁用一切远程**：`shootAt` 判 `MELEE_RANGE_SQUARED` 直接返回；声波的蓄满判定同样被这个距离挡掉（`updateSonicMode`），拉开距离后才恢复
-- **挨打反击上限 3 次**：`damage()` 里挨打会置 `revengeMode=true; revengeShots=3`；`shootAt` / `tryAttack` 每次命中调 `countRevengeShot()`，减到 0 就 `setAttacker(null)` + `setTarget(null)` 收手。声音触发和声波模式都会把 `revengeMode` 清掉，避免被反击计数提前打断
-- **targetSelector 必须清空**：原版 `SpitRevengeGoal`（`RevengeGoal` 子类）会在目标被清空后立刻用"上次攻击者"重新锁定，导致反击永远停不下来。`initGoals()` 里 `this.targetSelector.clear(goal -> true)`，反击完全由 `damage()` 接管
-- 开火前把 `yaw`/`bodyYaw`/`headYaw`/`pitch` 全部转向目标
-- **声波模式期间不开火吐口水**：`shootAt` 首行判断 `sonicMode` 直接 return；但**近战照常**
-- 同类不互殴：`setTarget` 过滤 `YaoYongshouEntity`，口水命中同类也不结算伤害
+- 缩进沿用 Tab；阈值、距离、时长一律先定义成类顶部常量，注释说明用途，不写魔法数字。
+- 注释写"为什么"（尤其是原版兼容、踩坑原因），不写"是什么"；公共方法用 Javadoc 说明契约。
+- 日志统一走 `debug(...)`，受 `DEBUG` 开关控制；不要直接 `LOGGER.info`。
+- Mixin 回调方法用 `firstmob$` 前缀；新增注入点要同步 `docs/API.md`。
+- 资源 ID 一律用 `Firstmob.id(...)` 生成，不手写字符串拼接。
+- 改 `setTarget` / `damage` / `shootAt` 这三个方法时，必须同步 [docs/SPEC.md](docs/SPEC.md) 的对应小节与不变量。
 
 ## 踩过的坑（别改回去）
 
@@ -94,36 +85,42 @@ src/client/java/com/example/firstmob/client
 2. **击退方向**：`LivingEntity.takeKnockback(strength, x, z)` 内部会取反，要传「从目标指向攻击者」的向量。
 3. **属性缺失**：羊驼默认没有 `GENERIC_ATTACK_DAMAGE`，近战会崩；`ModEntities` 里补了 `attack_damage=4`、`attack_knockback=0.5`。
 4. **渲染取值**：模型层用 `context.getPart(EntityModelLayers.VILLAGER)`，不是 `bakeLayer`。
-5. **刷怪蛋模型**：**不能**写 `"parent": "item/generated"`——那会走 `builtin/generated`，按 alpha 生成 1/16 厚的挤压壳（154 个 quad），自定义 `elements` 被忽略，表现为重影/厚度。当前做法：无 parent，内联 `display`/`gui_light`，单个元素 `from [0,0,7.5] to [16,16,7.5]`，同时给 `north`/`south` 面，最终 **2 个共面 quad**。
-6. **mixin 配置**：`firstmob.mixins.json` 被 `fabric.mod.json` 的 `mixins` 引用。Loom 1.15 会在 `remapJar` 阶段直接把注解里的方法名重映射成 intermediary（jar 里能看到 `method_5783`），**不需要 refmap**；手写 `"refmap"` 反而会因文件不存在报错。
-7. **目标被抢（近战优先级）**：近战放优先级 2 时**必须**在 `canStart` 和 `shouldContinue` 里都卡 3 格，否则它会一路追着目标跑、永远压住远程；只卡 `canStart` 不够，目标超出 3 格它仍会继续追。当前 `CloseMeleeGoal` 两处都卡了距离。
-8. **刷怪蛋生成幼体**：两条路径都要堵。①在方块上使用：`PassiveEntity#initialize` 在 `SpawnReason.SPAWN_EGG` 下直接 `setBreedingAge(-24000)`（绕过 `setBaby`），所以要覆盖 `isBaby`/`getBreedingAge`/`setBreedingAge`；②对着实体使用：`MobEntity.interact` 是 final，会走 `interactWithItem` → `SpawnEggItem#spawnBaby` → `createChild`，而 `LlamaEntity#createChild` 造出的是**原版小羊驼**，必须覆盖 `createChild` 返回 null。只改 `interactMob` 没用。
-9. **反击停不下来**：`LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`（`RevengeGoal` 子类，优先级 1）。它在目标被清空后会拿"上次攻击者"立刻重新锁定（日志里表现为 `target X -> null` 紧跟 `target null -> X`），所以只靠 `setTarget(null)` 永远停不下来。必须 `targetSelector.clear(goal -> true)`，并把自己的反击逻辑放进 `damage()`。
+5. **刷怪蛋模型**：不能写 `"parent": "item/generated"`——那会走 `builtin/generated`，按 alpha 生成 1/16 厚的挤压壳（154 个 quad），自定义 `elements` 被忽略，表现为重影/厚度。当前做法：无 parent，内联 `display`/`gui_light`，单个元素 `from [0,0,7.5] to [16,16,7.5]`，同时给 `north`/`south` 面，最终 2 个共面 quad。
+6. **mixin 配置**：Loom 1.15 在 `remapJar` 阶段把注解里的方法名重映射成 intermediary，**不需要 refmap**；手写 `"refmap"` 反而会因文件不存在报错。
+7. **近战抢目标**：`CloseMeleeGoal` 必须在 `canStart` 和 `shouldContinue` 里都卡 3 格；只卡 `canStart` 会让它一路追着目标跑、永远压住远程。
+8. **刷怪蛋生成幼体**：两条路径都要堵。①在方块上使用：`PassiveEntity#initialize` 在 `SpawnReason.SPAWN_EGG` 下直接 `setBreedingAge(-24000)`（绕过 `setBaby`），所以要覆盖 `isBaby`/`getBreedingAge`/`setBreedingAge`；②对着实体使用：`MobEntity.interact` 是 final，会走 `interactWithItem` → `SpawnEggItem#spawnBaby` → `createChild`，而 `LlamaEntity#createChild` 造出的是原版小羊驼，必须覆盖成返回 null。只改 `interactMob` 没用。
+9. **反击停不下来**：`LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`（`RevengeGoal` 子类，优先级 1），目标被清空后会拿"上次攻击者"立刻重新锁定（日志表现为 `target X -> null` 紧跟 `target null -> X`）。必须 `targetSelector.clear(goal -> true)`，反击逻辑放 `damage()`。
 
 ## 验证流程
 
-1. `.\gradlew.bat build` 必须 `BUILD SUCCESSFUL`
-2. `.\gradlew.bat runClient` 起客户端，日志在 `run/logs/latest.log`；mixin 注入失败会在启动/进世界时报 `InvalidMixinException`
+1. `.\gradlew.bat build` 必须 `BUILD SUCCESSFUL`。
+2. `.\gradlew.bat runClient` 起客户端；mixin 注入失败会在启动/进世界时报 `InvalidMixinException`，日志在 `run/logs/latest.log`。
 3. 测试命令：
+
    ```mcfunction
+   /kill @e[type=firstmob:yao_yongshou]
    /summon firstmob:yao_yongshou ~ ~ ~
    /give @s firstmob:yao_yongshou_spawn_egg
    ```
-4. 听觉验证：在 20 格内走路/跳跃/站着挨打都不应触发；连挖 3 个方块应触发；安静 5 秒应停火；跑出 25 格应放弃
-5. 声波验证：5 秒内连发 9 次 `SOUND_OTHER`（连挖 9 个方块 / 连放 9 个方块），应只出粒子束与 `entity.warden.sonic_boom`、不再吐口水；单纯走跳不应触发；跑出 40 格才停
-6. 近战验证：贴到 3 格内只挨揍、不放口水/声波；退到 3 格外立刻恢复远程
-7. 反击验证：打它一下最多还手 3 次就停；再打一次重新计 3 次
+
+4. 按 [docs/SPEC.md 的验收用例](docs/SPEC.md#10-验收用例) 逐条回归，至少覆盖：走路不触发、挖 3 格触发、安静 5 秒停火、25 格放弃、9 次升声波、40 格解除、3 格内只近战、反击 3 次、刷怪蛋不生成幼体。
+
+> 测试世界里常残留多只姚永寿（日志会出现多个 `[Yao#id]`），先 `/kill` 再测。
+
+## 文档维护
+
+- **行为 / 数值**：以 [docs/SPEC.md](docs/SPEC.md) 为唯一事实来源；先改 SPEC，再改代码，最后补 CHANGELOG。
+- **接口 / 注册 ID / 资源键**：同步 [docs/API.md](docs/API.md)。
+- **用户可见功能**：同步 `README.md` 的「玩法速览」。
+- **每次改动**：在 `CHANGELOG.md` 对应版本下记录；文档目录与阅读顺序见 [docs/README.md](docs/README.md)。
+- 正文用简体中文；ID、类名与 JSON 字段保持英文。
 
 ## 提交规范
 
 - 中文提交信息，前缀：`feat:` / `fix:` / `chore:` / `docs:`
-- 每次改动同步 `README.md`（功能说明）与 `CHANGELOG.md`
 - 提交前确认 `git status` 干净、`build` 通过
+- 一次提交只做一件事；文档改动单独用 `docs:` 提交
 
 ## 已知限制
 
-- 刷怪蛋是单面平面模型：侧视是一条线，掉落物转到背面看不到图案
-- 创造模式玩家免疫伤害，只会被击退
-- 声波沿用原版 `minecraft:sonic_boom`（`scaling: always`）：和平难度伤害归零；创造模式免疫伤害时连击退也不会结算，只剩粒子与音效
-- 方块音效按「挖/放动作」计数，不是按真实音效事件；播放声音/开箱子以外的方块交互也会算一次
-- 只保留村民外观，交易、职业、脑 AI 一概不继承
+见 README 的「已知限制」与 [docs/SPEC.md §11](docs/SPEC.md#11-已知限制)，此处不再重复。
