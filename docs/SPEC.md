@@ -181,7 +181,7 @@
 
 - 进入条件：目标存在、非声波模式、距离 > 3 格。
 - 首发：`setTarget` 成功锁定新目标的瞬间，若距离 ≤ 20 格且 `canSee`，立即 `shootAt` 一次（仍受 3/5 格限制），并记一次冷却；被激怒时同样适用。
-- 守卫：客户端、距离 ≤ 3 格（锁定模式 5 格），任一成立直接返回，不生成弹体；冷却由调用方控制（Goal 或锁定模式的 `nextSpitTick`）。
+- 守卫：客户端、`sonicMode`、距离 ≤ 3 格（锁定模式 5 格），任一成立直接返回，不生成弹体；锁定模式的冷却另由 `nextSpitTick` 控制。
 - 弹体：复用 `EntityType.LLAMA_SPIT`，实体类 `YaoYongshouSpitEntity`。
 - 弹道：出膛点 `(x, eyeY - 0.1, z)`；速度 2.5，散布 0.4；竖直方向补偿 `drop = 0.5 × 0.06 × t²`，其中 `t = 水平距离 / 2.5`。
 - 音效：`firstmob:entity.yao_yongshou.spit`（`SoundCategory.NEUTRAL`，音量/音调 1.0）。
@@ -224,11 +224,12 @@
 | --- | --- |
 | 每 tick | `faceTarget`，随后 `sonicTicks++` |
 | 0 | 播放蓄力音 `firstmob:entity.yao_yongshou.sonic_charge` |
-| 34 | 若与目标距离 > 20 格，`fireSonicBoom` |
+| 34 | 若与目标距离 > 3 格，`fireSonicBoom` |
 | 160 | `sonicTicks` 归零，进入下一轮（再次蓄力） |
 
-- 出声距离与锁定模式统一：**只有 20~40 格才开炮**；≤ 20 格时 `sonicTicks` 归零、改由口水/近战处理（`shootAt` 不再被 `sonicMode` 拦住）。
-- 20 格内没有"欠一炮"：回到 20 格外要重新蓄力 34 tick 才开火。
+- 声波模式是"9 次噪音"换来的，触发后**替代口水**：除贴身近战外不再吐口水，也不再按 20 格切回口水。
+- 没到 9 次噪音时，无论距离多远都只吐口水（超过 20 格会先走近），不会自己改放声波。
+- 20 格以外的声波最远到 40 格：目标跑出 40 格退出声波模式。
 - 每 tick 按 UUID 重新解析目标并 `setTarget`，中途被其他生物抢仇恨不影响声波锁定。
 - 停止：目标为空/死亡/下线、距离 > 40 格（T9），或被非玩家生物打中（T11）。
 - 退出时清除该玩家的 `recentSounds` 与 `recentLoudSounds`，必须重新攒满 9 次才能再次触发。
@@ -315,7 +316,7 @@
 
 1. `targetSelector` 始终为空，反击只由 `damage()` 驱动。
 2. 同类永不被 `setTarget` 接受，口水也永不伤害同类。
-3. `sonicMode == true` 时声波只在 20~40 格开炮；20 格内 `shootAt` 仍然可以吐口水（两种远程按距离分工）。
+3. `sonicMode == true` 时 `shootAt` 永不生成口水：普通模式的远程手段只由"5 秒内噪音是否 ≥ 9"决定，与距离无关；锁定模式不进入 `sonicMode`，按距离分工。
 4. 距离 ≤ 3 格时不生成口水（锁定模式 5 格）；声波只在 20~40 格开炮，20 格内不蓄力、不结算。
 5. 目标死亡当 tick 清空所有攻击状态；**残血锁定模式除外**——该模式下改锁最近的存活玩家。
 6. 不存在幼年形态：`isBaby()` 恒 false、`getBreedingAge()` 恒 0、`createChild()` 返回 null。

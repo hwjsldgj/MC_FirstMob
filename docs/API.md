@@ -81,7 +81,7 @@ public class Firstmob implements ModInitializer {
 | `tick` | `public void tick()` | 服务端负责目标死亡脱战、反击超时、25 格放弃、声波推进、停火判定 |
 | `setTarget` | `public void setTarget(LivingEntity target)` | 目标是同类时直接忽略；锁定新目标瞬间尝试首发（见 SPEC §5.2） |
 | `damage` | `public boolean damage(DamageSource source, float amount)` | 结算成功后接管反击/声波换目标；返回父类结果 |
-| `shootAt` | `public void shootAt(LivingEntity target, float pullProgress)` | 客户端、近战距离内（普通 3 格 / 锁定 5 格）直接返回；发射口水并扣反击/保证计数；冷却由调用方控制（Goal 或 `nextSpitTick`） |
+| `shootAt` | `public void shootAt(LivingEntity target, float pullProgress)` | 客户端、`sonicMode`（非 Boss 的声波替代口水）、近战距离内（3 / 5 格）直接返回；发射口水并扣反击/保证计数 |
 | `tryAttack` | `public boolean tryAttack(Entity target)` | 命中后记录挥击动画起点、按铁傀儡的方式向上顶目标（`0.4 × (1 - 击退抗性)`），并扣反击/保证计数，返回父类结果 |
 | `interactMob` | `public ActionResult interactMob(PlayerEntity player, Hand hand)` | 恒返回 `PASS`，拒绝喂食、驯服、上鞍等交互 |
 | `createChild` | `public LlamaEntity createChild(ServerWorld world, PassiveEntity partner)` | 恒返回 `null`，不产生后代 |
