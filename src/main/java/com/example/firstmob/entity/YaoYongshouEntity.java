@@ -59,8 +59,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int SOUND_OTHER = 3;
 	/** "至少攻击一次"的保证：和计数窗口一样只给 5 秒，安静下来就不再死追。 */
 	private static final int GUARANTEE_TIMEOUT_TICKS = 100;
-	/** 停火后，纯脚步声要等这么久才能再次触发（避免走两步就重新开打）。 */
-	private static final int STEP_RETRIGGER_COOLDOWN = 100;
 	/** 吐口水冷却：羊驼默认 40 tick，这里减 0.3 秒 = 34 tick。 */
 	private static final int SPIT_COOLDOWN_TICKS = 34;
 	/** 吐口水最大射程（格），与羊驼默认一致。 */
@@ -96,8 +94,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private int guaranteedShots;
 	/** 本轮触发的时间，用于保证期超时。 */
 	private long noiseTriggerTime;
-	/** 这个时间点之前，纯脚步声不再触发攻击。 */
-	private long stepTriggerAllowedAt;
 	/** 挨打反击模式：只打回去，计数用完就收手（不无限追）。 */
 	private boolean revengeMode;
 	/** 本轮反击还剩几次攻击。 */
@@ -191,11 +187,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 			// 已经在打他了，只更新计数
 			return;
 		}
-		if (countInWindow(this.recentSounds, uuid, now) < SOUND_THRESHOLD) {
-			return;
-		}
-		if ((kind == SOUND_WALK || kind == SOUND_JUMP) && now < this.stepTriggerAllowedAt) {
-			// 刚停火不久，别被走路/跳跃立刻叫回去
+		if (countInWindow(this.recentLoudSounds, uuid, now) < SOUND_THRESHOLD) {
+			// 只有真实动作声才触发：走路/跳跃/受击记在案，但不会把它叫过来
 			return;
 		}
 		this.noiseTarget = uuid;
@@ -284,11 +277,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.guaranteedShots = 0;
 			guaranteed = false;
 		}
-		// 判断"吵不吵"只看非脚步声：光走路不算持续吵闹
+		// 判断"吵不吵"只看真噪音：走路/跳跃/受击都不维持仇恨
 		if (!guaranteed && countInWindow(this.recentLoudSounds, this.noiseTarget, now) < RELEASE_SOUND_COUNT) {
 			this.setTarget(null);
 			this.noiseTarget = null;
-			this.stepTriggerAllowedAt = now + STEP_RETRIGGER_COOLDOWN;
 		}
 	}
 
@@ -321,7 +313,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.setTarget(null);
 		this.noiseTarget = null;
 		this.guaranteedShots = 0;
-		this.stepTriggerAllowedAt = now + STEP_RETRIGGER_COOLDOWN;
 	}
 
 	/** 声波模式下每 tick 走一遍：蓄力 34 tick → 开炮 → 冷却到 160 tick 再来。 */

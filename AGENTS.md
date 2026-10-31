@@ -56,14 +56,13 @@ src/client/java/com/example/firstmob/client
 
 - 半径 **20 格**，统计窗口 **5 秒**（100 tick），触发阈值 **3 次**
 - **分类计数**：`SOUND_WALK`（`*.step`）、`SOUND_JUMP`（`*.small_fall` / `*.big_fall`）、`SOUND_HURT`（`*.hurt`）三类各自独立，每类 5 秒窗口内只记 **1 次**（`lastWalkTicks` / `lastJumpTicks` / `lastHurtTicks` 卡 `SOUND_WINDOW_TICKS`）；`SOUND_OTHER` 每次发生都记 1 次
-- 只有 `SOUND_OTHER` 进 `recentLoudSounds`（维持仇恨 + 声波计数），另外三类只触发
-- **触发**：窗口内声音 ≥3 次 → `setTarget(玩家)`
-- **维持**：窗口内「非脚步」声音 ≥3 次；否则停火（清目标）
-- **每次触发至少攻击一次**：锁定后 5 秒（`GUARANTEE_TIMEOUT_TICKS`）内必须补一枪，超时则作废
-- **停火冷却**：停火后 5 秒内，走路/跳跃不会再触发（避免走两步就重新开打）
-- **放弃追击**：目标超过 **25 格**立即清目标
+- 只有 `SOUND_OTHER` 进 `recentLoudSounds`（触发 + 维持 + 声波计数），另外三类只记录不参与判定
 - 三类受限声音（走、跳、受击）**不能**进 `recentLoudSounds`：否则"打中→受伤音效→维持仇恨"会自我续期，玩家光跑也停不下来
-- 挖掘 / 放方块通过 `ServerPlayerInteractionManager` 的 mixin 记为一次 `SOUND_OTHER`（维持仇恨、可升声波）
+- **触发**：窗口内 `SOUND_OTHER`（真噪音）≥3 次 → `setTarget(玩家)`；走/跳/受击**只记录、不触发**
+- **维持**：窗口内 `SOUND_OTHER` ≥3 次；否则停火（清目标）
+- **每次触发至少攻击一次**：锁定后 5 秒（`GUARANTEE_TIMEOUT_TICKS`）内必须补一枪，超时则作废
+- **放弃追击**：目标超过 **25 格**立即清目标
+- 挖掘 / 放方块通过 `ServerPlayerInteractionManager` 的 mixin 记为一次 `SOUND_OTHER`（触发 + 维持 + 可升声波）
 - **25 格放弃、安静停火只在普通模式生效**；声波模式有自己的 40 格规则，见下
 
 ### 声波（监守者）
@@ -106,7 +105,7 @@ src/client/java/com/example/firstmob/client
    /summon firstmob:yao_yongshou ~ ~ ~
    /give @s firstmob:yao_yongshou_spawn_egg
    ```
-4. 听觉验证：在 20 格内走路/跳跃（各只贡献 1 次声音）、吃东西、挖方块；安静 5 秒应停火；跑出 25 格应放弃
+4. 听觉验证：在 20 格内走路/跳跃/站着挨打都不应触发；连挖 3 个方块应触发；安静 5 秒应停火；跑出 25 格应放弃
 5. 声波验证：5 秒内连发 9 次 `SOUND_OTHER`（连挖 9 个方块 / 连放 9 个方块），应只出粒子束与 `entity.warden.sonic_boom`、不再吐口水；单纯走跳不应触发；跑出 40 格才停
 6. 近战验证：贴到 3 格内只挨揍、不放口水/声波；退到 3 格外立刻恢复远程
 7. 反击验证：打它一下最多还手 3 次就停；再打一次重新计 3 次
