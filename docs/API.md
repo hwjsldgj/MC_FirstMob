@@ -82,7 +82,7 @@ public class Firstmob implements ModInitializer {
 | `setTarget` | `public void setTarget(LivingEntity target)` | 目标是同类时直接忽略；锁定新目标瞬间尝试首发（见 SPEC §5.2） |
 | `damage` | `public boolean damage(DamageSource source, float amount)` | 结算成功后接管反击/声波换目标；返回父类结果 |
 | `shootAt` | `public void shootAt(LivingEntity target, float pullProgress)` | 客户端、声波模式、≤3 格时直接返回；发射口水并扣反击/保证计数 |
-| `tryAttack` | `public boolean tryAttack(Entity target)` | 命中后扣反击/保证计数，返回父类结果 |
+| `tryAttack` | `public boolean tryAttack(Entity target)` | 命中后记录挥击动画起点、按铁傀儡的方式向上顶目标（`0.4 × (1 - 击退抗性)`），并扣反击/保证计数，返回父类结果 |
 | `interactMob` | `public ActionResult interactMob(PlayerEntity player, Hand hand)` | 恒返回 `PASS`，拒绝喂食、驯服、上鞍等交互 |
 | `createChild` | `public LlamaEntity createChild(ServerWorld world, PassiveEntity partner)` | 恒返回 `null`，不产生后代 |
 | `canBreedWith` | `public boolean canBreedWith(AnimalEntity other)` | 恒 false |
@@ -124,7 +124,7 @@ Boss 血条是实例字段 `private final ServerBossBar bossBar`（红色 `PROGR
 
 | 类 | 公开成员 | 说明 |
 | --- | --- | --- |
-| `ModEntities` | `public static final EntityType<YaoYongshouEntity> YAO_YONGSHOU`；`public static void register()` | 注册类型与默认属性（羊驼属性 + 100 血量 + 普通形态 1 倍体型/0 护甲 + 4 攻击力 + 0.5 攻击击退）；Boss 形态的 2 倍体型与 20 护甲由实体在血量阈值处写入 |
+| `ModEntities` | `public static final EntityType<YaoYongshouEntity> YAO_YONGSHOU`；`public static void register()` | 注册类型与默认属性（羊驼属性 + 100 血量 + 普通形态 1 倍体型/0 护甲 + 15 攻击力 + 0 攻击击退）；Boss 形态的 2 倍体型与 20 护甲由实体在血量阈值处写入 |
 | `ModItems` | `public static final Item YAO_YONGSHOU_SPAWN_EGG`；`public static void register()` | 注册刷怪蛋 |
 | `ModSounds` | 6 个 `SoundEvent` 常量；`public static void register()` | 静态字段完成注册，`register()` 只为触发类加载 |
 

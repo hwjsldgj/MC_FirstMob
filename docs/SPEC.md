@@ -23,7 +23,7 @@
 | 实体 ID | `firstmob:yao_yongshou` |
 | Java 基类 | `LlamaEntity`（只沿用普通寻路 + 吐口水） |
 | 外形 | 僵尸 `BipedEntityModel`（`EntityModelLayers.ZOMBIE`）+ `minecraft:textures/entity/zombie/zombie.png`；待机双臂前伸复用原版 `CrossbowPosing#meleeAttack` |
-| 近战动画 | 命中时由实体写入 `ATTACK_ANIM`（数据同步，10 tick = 0.5 秒）：抬到头顶 → 抡下 → 回位，不使用 `handSwingProgress` |
+| 近战动画 | 命中时记录 `ATTACK_START_AGE`（10 tick = 0.5 秒）；模型用渲染端 `age + tickDelta` 算进度，逐帧插值：快速抬到头顶 → 约 0.12 秒砸下 → 回位 |
 | 渲染与实体分离 | 外形不继承任何原版生物实体；模型只影响观感 |
 | 碰撞箱 | 宽 0.6 × 高 1.95，眼高 1.62（`EntityType` 基础值；`GENERIC_SCALE = 2` 后实际 1.2 × 3.9） |
 | 生成组 | `SpawnGroup.MISC` |
@@ -200,7 +200,8 @@
 ### 5.3 近战
 
 - `CloseMeleeGoal`，优先级 2，只在 3 格内接管；`canStart` 与 `shouldContinue` **都**卡 3 格，目标退出后立刻把控制权还给远程。
-- 近战伤害 4、攻击击退 0.5（属性加成）；`tryAttack` 命中后同样兑换保证攻击、扣反击计数。
+- 近战伤害 15（对齐铁傀儡 `GENERIC_ATTACK_DAMAGE`），`GENERIC_ATTACK_KNOCKBACK = 0`；命中后额外把目标向上顶 `0.4 × max(0, 1 - 击退抗性)`，与铁傀儡的击退一致（没有水平加成）。
+- `tryAttack` 命中后同样兑换保证攻击、扣反击计数。
 - 声波模式期间近战**照常**可用（只有远程被禁）。
 
 ### 5.4 挨打反击
@@ -256,6 +257,9 @@
 | `SPIT_COOLDOWN_TICKS` | 34 | tick | 吐口水间隔（原版 40） |
 | `SPIT_RANGE` | 20 | 格 | 吐口水射程 |
 | `MELEE_RANGE_SQUARED` | 9 | 格² | 3 格近战接管 / 远程禁用距离 |
+| `ATTACK_DAMAGE` | 15 | 点 | 近战伤害（铁傀儡数值） |
+| `ATTACK_KNOCKBACK` | 0 | — | 近战击退属性（铁傀儡没有加成） |
+| `GOLEM_KNOCKUP` | 0.4 | 倍 | 命中后向上顶的速度（× (1 - 击退抗性)） |
 | `REVENGE_SHOT_LIMIT` | 3 | 次 | 每次挨打最多还手次数 |
 | `REVENGE_TIMEOUT_TICKS` | 100 | tick | 反击超时 |
 | `SONIC_SOUND_THRESHOLD` | 9 | 次 | 声波触发阈值 |
@@ -351,6 +355,7 @@
 | A24 | 低血加速 | 打到 19 血 | 口水间隔约 27 tick、声波循环约 128 tick、蓄力约 27 tick |
 | A25 | 掉落经验 | 玩家击杀 | 掉落 500 点经验 |
 | A26 | 常驻 | 召唤后跑出很远再回来 | 实体仍在原地，不会自然消失 |
+| A27 | 铁傀儡式近战 | 贴身打一下 | 造成 15 点伤害，目标被向上顶起，水平方向没有额外击退 |
 
 ## 11. 已知限制
 
