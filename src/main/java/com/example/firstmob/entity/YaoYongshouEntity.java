@@ -100,7 +100,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 
 	/**
 	 * 玩家每发出一次音效就会调用这里（见 {@code PlayerSoundMixin}）。
-	 * 脚步声、以及被姚永寿打出来的受伤音效只算"一次发声"，不维持仇恨。
+	 * 脚步/落地声、以及被姚永寿打出来的受伤音效只算"一次发声"，不维持仇恨。
 	 */
 	public static void onPlayerSound(PlayerEntity player, SoundEvent sound) {
 		World world = player.getWorld();
@@ -112,7 +112,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (path.endsWith(".death")) {
 			return;
 		}
-		boolean step = path.endsWith(".step");
+		// 脚步、落地/跳跃声都算"移动声"：只触发，且与脚步共用同一份 5 秒限量
+		boolean step = path.endsWith(".step") || path.endsWith(".small_fall") || path.endsWith(".big_fall");
 		// 被姚永寿打出的受伤音效只记 1 次，而且不算"持续吵闹"（否则追打会自己续上，永远停不下来）
 		boolean hitByYao = path.endsWith(".hurt") && isHurtByYao(player);
 		dispatch(player, !step && !hitByYao, step);
