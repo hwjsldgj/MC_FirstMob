@@ -86,7 +86,7 @@ docs/                               # SPEC / API / 文档索引
 2. **击退方向**：`LivingEntity.takeKnockback(strength, x, z)` 内部会取反，要传「从目标指向攻击者」的向量。
 3. **属性缺失**：羊驼默认没有 `GENERIC_ATTACK_DAMAGE`，近战会崩；`ModEntities` 里补了 `attack_damage=15`（铁傀儡数值）、`attack_knockback=0`，击退靠命中时向上顶 0.4。
 4. **渲染取值**：模型层用 `context.getPart(EntityModelLayers.ZOMBIE)`（64×64 人形骨架），不是 `bakeLayer`；原版 `ZombieEntityModel` / `IronGolemEntityModel` 的泛型绑死在对应实体上，只能借骨架和 `CrossbowPosing`，不能直接实例化。
-5. **空闲传送**：偏角随机在 35°~145°（左右随机），**不要出现 0°（正前方）**，否则会贴脸出现在玩家视野正中；半径 12~18 格随机，落点必须"脚下实心 + 按身高留空"且区块已加载，传送用 `requestTeleport` 并先停寻路。
+5. **空闲传送**：偏角随机在 35°~145°（左右随机），**不要出现 0°（正前方）**，否则会贴脸出现在玩家视野正中；半径 18~22 格随机，落点必须 3×3×4 空地（3×3 脚下实心 + 4 格空气）且区块已加载；玩家周围找不到就退到 48~64 格外，5 秒后重试。传送用 `requestTeleport` 并先停寻路。
 6. **攻击动画**：别依赖 `handSwingProgress`（非玩家实体上很难确认是否发包）；命中时把 `ATTACK_START_AGE`（`TrackedData<Integer>`）写成 `this.age`，模型用渲染端 `age + tickDelta` 算进度——按帧插值才不卡顿，倒计时式的整数 tick 会一格一格跳。
 7. **刷怪蛋模型**：不能写 `"parent": "item/generated"`——那会走 `builtin/generated`，按 alpha 生成 1/16 厚的挤压壳（154 个 quad），自定义 `elements` 被忽略，表现为重影/厚度。当前做法：无 parent，内联 `display`/`gui_light`，单个元素 `from [0,0,7.5] to [16,16,7.5]`，同时给 `north`/`south` 面，最终 2 个共面 quad。
 8. **mixin 配置**：Loom 1.15 在 `remapJar` 阶段把注解里的方法名重映射成 intermediary，**不需要 refmap**；手写 `"refmap"` 反而会因文件不存在报错。

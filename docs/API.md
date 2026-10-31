@@ -93,9 +93,10 @@ public class Firstmob implements ModInitializer {
 | 攻击动画 | `public float getAttackAnimationProgress()`；`tryAttack` 命中时把 `ATTACK_ANIM` 设为 10，每 tick 递减 | 0 = 待机，0~1 = 挥击进度；数据同步（`TrackedData<Integer>`），客户端模型据此播放抡臂 |
 | `shootAt` 冷却 | 内部字段 `nextSpitTick` | `shootAt` 自行限流：基础 34 tick，`<20%` 血时 27 tick；锁定模式与 `ProjectileAttackGoal` 共用 |
 | `updateLockMode`（私有） | 每 tick 一次 | `<60%` 血时接管目标与攻击：优先打它的玩家，其次最近玩家；<5 格近战、5~20 格口水、20~40 格声波；>40 格只追不打 |
-| `updateIdleFollow`（私有） | 每 tick 一次（仅 `IDLE`） | 20 格内 `lookAt` 玩家、>16 格跟上去、>25 格调用 `teleportNearPlayer` |
-| `isChasingPlayer` / `updateChaseSpeed`（私有） | 每 tick 一次 | 有目标且不在近战距离、或空闲跟随 >16 格时挂速度 II；停止追击收回，Boss 形态退回速度 I |
-| `teleportNearPlayer`（私有） | 传送失败时 20 tick 内不重试 | 相对玩家朝向随机偏 35°~145°（左右随机、**不含正前方**）、半径随机 12~18 格，最多试 6 个落点；找不到返回 false 让调用方退回走路 |
+| `updateIdleFollow`（私有） | 每 tick 一次（仅 `IDLE`） | 20 格内 `lookAt`、>20 格靠近、<16 格后退、>36 格调用 `tryTeleport` |
+| `updateMovementSpeed` / `setSpeedLevel`（私有） | 每 tick 一次 | 游走速度 III（amplifier 2）、战斗追击速度 II、其余按 Boss 形态速度 I 或普通形态无加速 |
+| `teleportNearPlayer`（私有） | 每次最多 6 个随机落点 | 相对玩家朝向随机偏 35°~145°（左右随机、**不含正前方**）、半径 18~22 格，落点要求 3×3×4 空地 |
+| `teleportFarFromPlayer`（私有） | 玩家周围无落点时的退路 | 任意方向 48~64 格；之后 `TELEPORT_RETRY_TICKS`（100 tick = 5 秒）再试 |
 | `nearestPlayer`（私有） | 供锁定与空闲跟随共用 | 同世界最近的存活、非旁观玩家 |
 | `onStartedTrackingBy` / `onStoppedTrackingBy` | `public void onStartedTrackingBy(ServerPlayerEntity player)` / `public void onStoppedTrackingBy(ServerPlayerEntity player)` | 把玩家加进 / 移出 Boss 血条，与凋灵同一套写法 |
 | `onDeath` | `public void onDeath(DamageSource source)` | 服务端收起 Boss 血条并清空玩家列表 |
