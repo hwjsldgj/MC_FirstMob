@@ -102,8 +102,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int SONIC_INTERVAL_TICKS = 160;
 	/** 原版声波伤害。 */
 	private static final float SONIC_DAMAGE = 10.0F;
-	/** Boss 掉落经验：普通生物 1~3 点，boss 一次给 200 点。 */
-	private static final int BOSS_XP_REWARD = 200;
+	/** Boss 掉落经验：普通生物 1~3 点，boss 一次给 500 点。 */
+	private static final int BOSS_XP_REWARD = 500;
 	/** Boss 血条同步间隔：每 tick 都刷新会不停发包，10 tick（0.5 秒）足够跟手。 */
 	private static final int BOSS_BAR_INTERVAL_TICKS = 10;
 	/** Boss 形态血量阈值：掉到 80% 以下就变身，单向不可逆。 */
@@ -120,6 +120,12 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int LOW_HEALTH_REGEN_TICKS = 600;
 	/** 抗性提升 / 抗火，各 5 分钟（现版效果）。 */
 	private static final int LOW_HEALTH_RESISTANCE_TICKS = 6000;
+	/** 残血锁定阈值：血量 <60% 开始死咬玩家，≤20 格吐口水、>20 格放声波。 */
+	private static final float LOCK_HEALTH_RATIO = 0.6F;
+	/** 解除锁定：健康满血且这么久（600 tick = 30 秒）没被玩家打中。 */
+	private static final int LOCK_RELEASE_NO_DAMAGE_TICKS = 600;
+	/** 低于 20% 血时攻击冷却缩短 20%（34→27 tick、160→128 tick、蓄力 34→27）。 */
+	private static final double ATTACK_BOOST_COOLDOWN_FACTOR = 0.8D;
 
 	/** 每个玩家的全部发声时间（含脚步），用于判断"吵不吵"。 */
 	private final Map<UUID, Deque<Long>> recentSounds = new HashMap<>();
@@ -149,6 +155,16 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private boolean bossForm;
 	/** 本次"低于 20%"是否已结算过金苹果效果，回血到 20% 以上时复位。 */
 	private boolean lowHealthTriggered;
+	/** 是否处于残血锁定模式：血量 <60% 进入，满血且 30 秒无伤才解除。 */
+	private boolean lockMode;
+	/** 锁定目标：优先最近一次打它的玩家，其次是最近的玩家；null 表示没记住谁打过它。 */
+	private UUID lockTarget;
+	/** 最后一次被玩家打中的世界时间，解锁判定用。 */
+	private long lastPlayerDamageTick;
+	/** 锁定模式下"距离 >20 格"时的声波节拍（蓄力 / 循环）。 */
+	private int lockSonicTicks;
+	/** 下一次允许吐口水的世界时间：两种模式共用一套冷却，<20% 血时按 80% 计算。 */
+	private long nextSpitTick;
 	/** Boss 血条：标题取实体显示名，进度跟随当前血量，只发给正在追踪本实体的玩家。 */
 	private final ServerBossBar bossBar = new ServerBossBar(this.getDisplayName(), BossBar.Color.RED,
 			BossBar.Style.PROGRESS);
@@ -182,6 +198,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 		} else {
 			// 回血越过 20% 后再掉下去，要能再触发一次
 			this.lowHealthTriggered = false;
+		}
+		// <60%：进入残血锁定，之后不再按声音/距离规则脱战
+		if (!this.lockMode && this.getHealth() < this.getMaxHealth() * LOCK_HEALTH_RATIO) {
+			this.enterLockMode(this.getWorld().getTime());
 		}
 	}
 
@@ -221,6 +241,133 @@ public class YaoYongshouEntity extends LlamaEntity {
 			instance.setBaseValue(value);
 			this.calculateDimensions();
 		}
+	}
+
+	// ------------------------------------------------------------------
+	// 残血锁定：<60% 血死咬玩家，近处口水、远处声波
+	// ------------------------------------------------------------------
+
+	/** 进入锁定模式：清掉声音/反击状态，改由锁定逻辑自己决定打谁、用什么打。 */
+	private void enterLockMode(long now) {
+		if (this.sonicMode) {
+			// 噪音声波是旧机制，锁定后由 updateLockSonic 接管，避免两套状态互相打架
+			this.exitSonicMode(now);
+		}
+		this.lockMode = true;
+		this.lockTarget = null;
+		this.lockSonicTicks = 0;
+		this.nextSpitTick = 0L;
+		this.lastPlayerDamageTick = now;
+		this.noiseTarget = null;
+		this.guaranteedShots = 0;
+		this.revengeMode = false;
+		this.revengeShots = 0;
+		debug("LOCK enter hp={}", this.getHealth());
+	}
+
+	/** 解除锁定：目标与节拍全部清空，之后重新由声音/受击触发。 */
+	private void exitLockMode() {
+		this.lockMode = false;
+		this.lockTarget = null;
+		this.lockSonicTicks = 0;
+		debug("LOCK exit hp={}", this.getHealth());
+		this.setTarget(null);
+	}
+
+	/** 锁定模式每 tick：先判解锁，再解析目标，最后按距离选攻击手段。 */
+	private void updateLockMode(long now) {
+		// 死亡动画期间尸体还会 tick 一小会儿，别让它继续开炮
+		if (!this.isAlive()) {
+			return;
+		}
+		// 满血 + 30 秒没被玩家打中，两个条件同时满足才解除
+		if (this.getHealth() >= this.getMaxHealth()
+				&& now - this.lastPlayerDamageTick >= LOCK_RELEASE_NO_DAMAGE_TICKS) {
+			this.exitLockMode();
+			return;
+		}
+		PlayerEntity target = this.resolveLockTarget();
+		if (target == null) {
+			this.setTarget(null);
+			this.lockSonicTicks = 0;
+			return;
+		}
+		if (this.getTarget() != target) {
+			// 换目标：setTarget 在 ≤20 格时会立刻补一枪
+			this.setTarget(target);
+		}
+		if (this.squaredDistanceTo(target) > SPIT_RANGE * SPIT_RANGE) {
+			this.updateLockSonic(target);
+		} else {
+			// 20 格内交给口水；回到近处要把声波节拍清零，下次出圈重新蓄力
+			this.lockSonicTicks = 0;
+			this.shootAt(target, 1.0F);
+		}
+	}
+
+	/** 目标解析：先找最近一次打它的玩家，找不到再找最近的存活玩家（不限距离）。 */
+	private PlayerEntity resolveLockTarget() {
+		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
+			return null;
+		}
+		if (this.lockTarget != null) {
+			PlayerEntity attacker = serverWorld.getPlayerByUuid(this.lockTarget);
+			if (attacker != null && attacker.isAlive() && !attacker.isSpectator()) {
+				return attacker;
+			}
+			this.lockTarget = null;
+		}
+		PlayerEntity nearest = null;
+		double nearestSquared = Double.MAX_VALUE;
+		for (ServerPlayerEntity player : serverWorld.getPlayers()) {
+			if (!player.isAlive() || player.isSpectator()) {
+				continue;
+			}
+			double squared = this.squaredDistanceTo(player);
+			if (squared < nearestSquared) {
+				nearestSquared = squared;
+				nearest = player;
+			}
+		}
+		return nearest;
+	}
+
+	/** 距离 >20 格：蓄力后放声波，节拍与噪音声波一致（<20% 血时也缩短 20%）。 */
+	private void updateLockSonic(PlayerEntity target) {
+		if (this.lockSonicTicks == 0) {
+			this.playSound(ModSounds.SONIC_CHARGE, 3.0F, 1.0F);
+		}
+		this.faceTarget(target);
+		this.lockSonicTicks++;
+		if (this.lockSonicTicks == this.sonicChargeTicks()) {
+			this.fireSonicBoom(target);
+		}
+		if (this.lockSonicTicks >= this.sonicIntervalTicks()) {
+			this.lockSonicTicks = 0;
+		}
+	}
+
+	/** <20% 血：攻击冷却降低 20%。 */
+	private boolean isAttackBoosted() {
+		return this.getHealth() < this.getMaxHealth() * LOW_HEALTH_RATIO;
+	}
+
+	/** 吐口水冷却：基础 34 tick，<20% 血时 27 tick。 */
+	private int spitCooldownTicks() {
+		return this.isAttackBoosted() ? (int) Math.round(SPIT_COOLDOWN_TICKS * ATTACK_BOOST_COOLDOWN_FACTOR)
+				: SPIT_COOLDOWN_TICKS;
+	}
+
+	/** 声波蓄力：基础 34 tick，<20% 血时 27 tick。 */
+	private int sonicChargeTicks() {
+		return this.isAttackBoosted() ? (int) Math.round(SONIC_CHARGE_TICKS * ATTACK_BOOST_COOLDOWN_FACTOR)
+				: SONIC_CHARGE_TICKS;
+	}
+
+	/** 声波循环：基础 160 tick，<20% 血时 128 tick。 */
+	private int sonicIntervalTicks() {
+		return this.isAttackBoosted() ? (int) Math.round(SONIC_INTERVAL_TICKS * ATTACK_BOOST_COOLDOWN_FACTOR)
+				: SONIC_INTERVAL_TICKS;
 	}
 
 	/** 形态进存档：重载后退回普通形态或立刻重刷濒死效果都是错的。 */
@@ -357,6 +504,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 
 	/** 记账：窗口内声音够多就触发；只有"真噪音"才维持仇恨。 */
 	private void hearSoundFrom(PlayerEntity player, int kind) {
+		// 已进入残血锁定：目标由锁定逻辑决定，声音不再改仇恨
+		if (this.lockMode) {
+			return;
+		}
 		UUID uuid = player.getUuid();
 		long now = this.getWorld().getTime();
 		boolean loud = kind == SOUND_OTHER;
@@ -445,34 +596,40 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.updateFormState();
 		this.updateBossBar();
 		long now = world.getTime();
-		// 目标死亡/被移除就立刻收手，别对着尸体重启战斗
-		LivingEntity currentTarget = this.getTarget();
-		if (currentTarget != null && !currentTarget.isAlive()) {
-			this.setTarget(null);
-			this.noiseTarget = null;
-			this.guaranteedShots = 0;
-			this.revengeMode = false;
-			this.revengeShots = 0;
-		}
-		// 反击超时：5 秒内一次都没打出去就放弃，避免目标被永久粘住
-		if (this.revengeMode && now > this.revengeDeadline) {
-			this.revengeMode = false;
-			this.revengeShots = 0;
-			this.setAttacker(null);
-			this.setTarget(null);
-		}
-		if (this.sonicMode) {
-			this.updateSonicMode(now);
+		if (this.lockMode) {
+			// 锁定模式：安静停火、25 格放弃、反击超时这些脱战规则全部让位
+			this.updateLockMode(now);
 		} else {
-			// 目标跑出 25 格：直接放弃追击（声波模式另算，见 updateSonicMode）
-			LivingEntity chaseTarget = this.getTarget();
-			if (chaseTarget instanceof PlayerEntity player && this.squaredDistanceTo(player) > MAX_CHASE_RANGE_SQUARED) {
+			// 目标死亡/被移除就立刻收手，别对着尸体重启战斗
+			LivingEntity currentTarget = this.getTarget();
+			if (currentTarget != null && !currentTarget.isAlive()) {
 				this.setTarget(null);
 				this.noiseTarget = null;
 				this.guaranteedShots = 0;
+				this.revengeMode = false;
+				this.revengeShots = 0;
 			}
+			// 反击超时：5 秒内一次都没打出去就放弃，避免目标被永久粘住
+			if (this.revengeMode && now > this.revengeDeadline) {
+				this.revengeMode = false;
+				this.revengeShots = 0;
+				this.setAttacker(null);
+				this.setTarget(null);
+			}
+			if (this.sonicMode) {
+				this.updateSonicMode(now);
+			} else {
+				// 目标跑出 25 格：直接放弃追击（声波模式另算，见 updateSonicMode）
+				LivingEntity chaseTarget = this.getTarget();
+				if (chaseTarget instanceof PlayerEntity player
+						&& this.squaredDistanceTo(player) > MAX_CHASE_RANGE_SQUARED) {
+					this.setTarget(null);
+					this.noiseTarget = null;
+					this.guaranteedShots = 0;
+				}
+			}
+			this.updateNoiseAggro(now);
 		}
-		this.updateNoiseAggro(now);
 		if (now % 100L == 0L) {
 			pruneOutdated(this.recentSounds, now);
 			pruneOutdated(this.recentLoudSounds, now);
@@ -538,7 +695,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.guaranteedShots = 0;
 	}
 
-	/** 声波模式下每 tick 走一遍：蓄力 34 tick → 开炮 → 冷却到 160 tick 再来。 */
+	/** 声波模式下每 tick 走一遍：蓄力 34 tick → 开炮 → 冷却到 160 tick 再来（<20% 血时各缩短 20%）。 */
 	private void updateSonicMode(long now) {
 		// 直接按 UUID 找锁定目标：中途被别的怪抢仇恨也不会退出声波模式
 		PlayerEntity player = this.noiseTarget == null ? null : this.getWorld().getPlayerByUuid(this.noiseTarget);
@@ -556,10 +713,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.faceTarget(player);
 		this.sonicTicks++;
 		// 贴身时只准近战：声波蓄满也不放，等目标拉开距离再打
-		if (this.sonicTicks == SONIC_CHARGE_TICKS && this.squaredDistanceTo(player) > MELEE_RANGE_SQUARED) {
+		if (this.sonicTicks == this.sonicChargeTicks() && this.squaredDistanceTo(player) > MELEE_RANGE_SQUARED) {
 			this.fireSonicBoom(player);
 		}
-		if (this.sonicTicks >= SONIC_INTERVAL_TICKS) {
+		if (this.sonicTicks >= this.sonicIntervalTicks()) {
 			this.sonicTicks = 0;
 		}
 	}
@@ -703,6 +860,19 @@ public class YaoYongshouEntity extends LlamaEntity {
 			// 被谁打就锁定谁（创造模式玩家也照样反击）；同类造成的伤害不还手
 			Entity attacker = source.getAttacker();
 			if (attacker instanceof LivingEntity living && living != this && !(living instanceof YaoYongshouEntity)) {
+				if (living instanceof PlayerEntity player) {
+					// 解锁判据是"玩家造成的伤害"，非玩家打的不刷新这个时间
+					this.lastPlayerDamageTick = this.getWorld().getTime();
+					if (this.lockMode) {
+						// 锁定期间谁打就先咬谁，而且没有还手次数上限
+						this.lockTarget = player.getUuid();
+						this.setTarget(player);
+						return damaged;
+					}
+				} else if (this.lockMode) {
+					// 锁定期间被别的生物打：目标不变，继续咬玩家
+					return damaged;
+				}
 				if (this.sonicMode) {
 					if (living == this.getTarget()) {
 						// 打人的还是声波锁着的那位：保持锁定，近战由 CloseMeleeGoal 接管
@@ -743,6 +913,12 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (this.squaredDistanceTo(target) <= MELEE_RANGE_SQUARED) {
 			return;
 		}
+		// 冷却统一在这里判：<20% 血时缩短 20%，锁定模式与普通模式共用同一套
+		long now = world.getTime();
+		if (now < this.nextSpitTick) {
+			return;
+		}
+		this.nextSpitTick = now + this.spitCooldownTicks();
 		debug("SHOOT dist={} rev={}/{} guar={}", (int) this.squaredDistanceTo(target),
 				this.revengeMode, this.revengeShots, this.guaranteedShots);
 		double dx = target.getX() - this.getX();
