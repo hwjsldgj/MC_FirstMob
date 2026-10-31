@@ -89,7 +89,9 @@ public class Firstmob implements ModInitializer {
 | `isBreedingItem` | `public boolean isBreedingItem(ItemStack stack)` | 恒 false |
 | `isBaby` / `setBaby` | `public boolean isBaby()` / `public void setBaby(boolean baby)` | 恒 false / 空实现 |
 | `getBreedingAge` / `setBreedingAge` | `public int getBreedingAge()` / `public void setBreedingAge(int age)` | 恒 0 / 空实现 |
-| `getXpToDrop` | `protected int getXpToDrop()` | 恒 200，Boss 经验 |
+| `getXpToDrop` | `protected int getXpToDrop()` | 恒 500，Boss 经验 |
+| `shootAt` 冷却 | 内部字段 `nextSpitTick` | `shootAt` 自行限流：基础 34 tick，`<20%` 血时 27 tick；锁定模式与 `ProjectileAttackGoal` 共用 |
+| `updateLockMode`（私有） | 每 tick 一次 | `<60%` 血时接管目标与攻击：优先打它的玩家，其次最近玩家；≤20 格口水、>20 格声波 |
 | `onStartedTrackingBy` / `onStoppedTrackingBy` | `public void onStartedTrackingBy(ServerPlayerEntity player)` / `public void onStoppedTrackingBy(ServerPlayerEntity player)` | 把玩家加进 / 移出 Boss 血条，与凋灵同一套写法 |
 | `onDeath` | `public void onDeath(DamageSource source)` | 服务端收起 Boss 血条并清空玩家列表 |
 | `writeCustomDataToNbt` / `readCustomDataFromNbt` | `public void writeCustomDataToNbt(NbtCompound nbt)` / `public void readCustomDataFromNbt(NbtCompound nbt)` | 存档 `BossForm`（是否已转 Boss 形态）与 `LowHealthTriggered`（本轮濒死效果是否已结算）；读档时补回永久速度/力量 |
