@@ -77,6 +77,9 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private final Map<UUID, Deque<Long>> recentSounds = new HashMap<>();
 	/** 每个玩家的"非脚步"发声时间，用于判断还要不要继续打。 */
 	private final Map<UUID, Deque<Long>> recentLoudSounds = new HashMap<>();
+	/** 每个玩家上一次脚步 / 非脚步发声的 tick，用于同一 tick 内去重。 */
+	private final Map<UUID, Long> lastStepTicks = new HashMap<>();
+	private final Map<UUID, Long> lastLoudTicks = new HashMap<>();
 	/** 当前由"吵闹"触发攻击的目标；null 表示不是声音触发的攻击。 */
 	private UUID noiseTarget;
 	/** 本次触发还欠几次攻击（至少 1 次）。 */
@@ -108,10 +111,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (path.endsWith(".death")) {
 			return;
 		}
-		// 被姚永寿自己吐出来的口水打中不算"吵闹"，否则仇恨会自己续上
-		if (path.endsWith(".hurt") && isHurtByYao(player)) {
-			return;
-		}
+		// 只处理玩家自己发出的音效（挂的就是 PlayerEntity#playSound）；
+		// 脚步单独标记：计入"触发"，但不计入声波所需的"大声"
 		dispatch(player, !path.endsWith(".step"));
 	}
 
@@ -134,24 +135,25 @@ public class YaoYongshouEntity extends LlamaEntity {
 		}
 	}
 
-	private static boolean isHurtByYao(PlayerEntity player) {
-		DamageSource source = player.getRecentDamageSource();
-		if (source == null) {
-			return false;
-		}
-		return source.isOf(YaoYongshouSpitEntity.DAMAGE_TYPE) || source.getAttacker() instanceof YaoYongshouEntity;
-	}
-
 	/** 记账：窗口内声音够多就触发；只要还吵着就继续打。 */
 	private void hearSoundFrom(PlayerEntity player, boolean loud) {
 		UUID uuid = player.getUuid();
 		long now = this.getWorld().getTime();
+		// 同一次发声可能在同一 tick 触发好几条音效（比如被口水打中：受伤音效 + 其它），
+		// 同一 tick、同一类（脚步 / 非脚步）只记 1 次，避免一次事件被算成好几次
+		Map<UUID, Long> lastTicks = loud ? this.lastLoudTicks : this.lastStepTicks;
+		Long last = lastTicks.get(uuid);
+		if (last != null && last.longValue() == now) {
+			return;
+		}
+		lastTicks.put(uuid, now);
+
 		record(this.recentSounds, uuid, now);
 		if (loud) {
 			record(this.recentLoudSounds, uuid, now);
 		}
-		// 5 秒内声音超过 8 次：升级成声波模式，优先于吐口水
-		if (!this.sonicMode && countInWindow(this.recentSounds, uuid, now) >= SONIC_SOUND_THRESHOLD) {
+		// 5 秒内"非脚步"声音超过 8 次：升级成声波模式，优先于吐口水
+		if (!this.sonicMode && countInWindow(this.recentLoudSounds, uuid, now) >= SONIC_SOUND_THRESHOLD) {
 			this.enterSonicMode(player, now);
 			return;
 		}
