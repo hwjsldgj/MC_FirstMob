@@ -80,7 +80,7 @@ src/client/java/com/example/firstmob/client
 5. **刷怪蛋模型**：**不能**写 `"parent": "item/generated"`——那会走 `builtin/generated`，按 alpha 生成 1/16 厚的挤压壳（154 个 quad），自定义 `elements` 被忽略，表现为重影/厚度。当前做法：无 parent，内联 `display`/`gui_light`，单个元素 `from [0,0,7.5] to [16,16,7.5]`，同时给 `north`/`south` 面，最终 **2 个共面 quad**。
 6. **mixin 配置**：`firstmob.mixins.json` 被 `fabric.mod.json` 的 `mixins` 引用。Loom 1.15 会在 `remapJar` 阶段直接把注解里的方法名重映射成 intermediary（jar 里能看到 `method_5783`），**不需要 refmap**；手写 `"refmap"` 反而会因文件不存在报错。
 7. **目标被抢**：近战若放优先级 2 会压住远程；必须 ≥4。
-8. **刷怪蛋生成幼体**：`PassiveEntity#initialize` 在 `SpawnReason.SPAWN_EGG` 下有 5% 概率 `setBaby(true)`，所以即使改目标也要覆盖 `isBaby()`/`setBaby()` 才能彻底没有幼年形态；繁殖另用 `isBreedingItem`/`canBreedWith` 关掉。
+8. **刷怪蛋生成幼体**：两条路径都要堵。①在方块上使用：`PassiveEntity#initialize` 在 `SpawnReason.SPAWN_EGG` 下直接 `setBreedingAge(-24000)`（绕过 `setBaby`），所以要覆盖 `isBaby`/`getBreedingAge`/`setBreedingAge`；②对着实体使用：`MobEntity.interact` 是 final，会走 `interactWithItem` → `SpawnEggItem#spawnBaby` → `createChild`，而 `LlamaEntity#createChild` 造出的是**原版小羊驼**，必须覆盖 `createChild` 返回 null。只改 `interactMob` 没用。
 
 ## 验证流程
 

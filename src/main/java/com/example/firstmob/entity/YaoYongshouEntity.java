@@ -19,8 +19,10 @@ import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.passive.LlamaEntity;
+import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
@@ -245,7 +247,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 	// 没有幼年形态、不能繁殖、不能驯服/骑乘
 	// ------------------------------------------------------------------
 
-	/** 刷怪蛋有 5% 概率生成幼年个体（PassiveEntity#initialize），这里直接断掉。 */
+	/**
+	 * 刷怪蛋有 5% 概率生成幼年个体（{@code PassiveEntity#initialize} 直接改 breedingAge），
+	 * 这里把年龄相关状态全部钉死为成年。
+	 */
 	@Override
 	public boolean isBaby() {
 		return false;
@@ -254,6 +259,27 @@ public class YaoYongshouEntity extends LlamaEntity {
 	@Override
 	public void setBaby(boolean baby) {
 		// 姚永寿没有幼年形态
+	}
+
+	@Override
+	public int getBreedingAge() {
+		return 0;
+	}
+
+	@Override
+	public void setBreedingAge(int age) {
+		// 始终保持成年
+	}
+
+	/**
+	 * 不产生后代。
+	 * <p>{@code MobEntity.interact} 是 final 的，拿刷怪蛋右键本实体时会走
+	 * {@code MobEntity#interactWithItem} → {@code SpawnEggItem#spawnBaby} → 这里，
+	 * 而父类 {@code LlamaEntity#createChild} 会造出一只**原版小羊驼**。返回 null 即不生成。
+	 */
+	@Override
+	public LlamaEntity createChild(ServerWorld world, PassiveEntity partner) {
+		return null;
 	}
 
 	@Override
