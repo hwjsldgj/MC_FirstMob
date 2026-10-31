@@ -17,17 +17,23 @@ import net.minecraft.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.entity.ai.goal.ProjectileAttackGoal;
 import net.minecraft.entity.ai.goal.SwimGoal;
 import net.minecraft.entity.ai.goal.WanderAroundFarGoal;
+import net.minecraft.entity.attribute.EntityAttribute;
+import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.boss.BossBar;
 import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.entity.damage.DamageSource;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.passive.LlamaEntity;
 import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundEvent;
@@ -100,6 +106,20 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int BOSS_XP_REWARD = 200;
 	/** Boss 血条同步间隔：每 tick 都刷新会不停发包，10 tick（0.5 秒）足够跟手。 */
 	private static final int BOSS_BAR_INTERVAL_TICKS = 10;
+	/** Boss 形态血量阈值：掉到 80% 以下就变身，单向不可逆。 */
+	private static final float BOSS_FORM_HEALTH_RATIO = 0.8F;
+	/** Boss 形态体型：运行时写进 generic.scale，碰撞箱、眼高与模型一起放大。 */
+	private static final double BOSS_SCALE = 2.0D;
+	/** Boss 形态护甲：20 点约减伤 80%，未加护甲韧性。 */
+	private static final double BOSS_ARMOR = 20.0D;
+	/** 濒死阈值：低于 20% 触发附魔金苹果效果（每次下穿阈值触发一次）。 */
+	private static final float LOW_HEALTH_RATIO = 0.2F;
+	/** 伤害吸收 IV，2 分钟（现版效果）。 */
+	private static final int LOW_HEALTH_ABSORPTION_TICKS = 2400;
+	/** 生命恢复 II，30 秒（取 1.8 老版更长的时长）。 */
+	private static final int LOW_HEALTH_REGEN_TICKS = 600;
+	/** 抗性提升 / 抗火，各 5 分钟（现版效果）。 */
+	private static final int LOW_HEALTH_RESISTANCE_TICKS = 6000;
 
 	/** 每个玩家的全部发声时间（含脚步），用于判断"吵不吵"。 */
 	private final Map<UUID, Deque<Long>> recentSounds = new HashMap<>();
@@ -125,6 +145,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private boolean sonicMode;
 	/** 距离上一次声波已经过去的 tick 数，用来做蓄力/冷却节拍。 */
 	private int sonicTicks;
+	/** 是否已转入 Boss 形态：只由血量触发，一旦为 true 不再回退。 */
+	private boolean bossForm;
+	/** 本次"低于 20%"是否已结算过金苹果效果，回血到 20% 以上时复位。 */
+	private boolean lowHealthTriggered;
 	/** Boss 血条：标题取实体显示名，进度跟随当前血量，只发给正在追踪本实体的玩家。 */
 	private final ServerBossBar bossBar = new ServerBossBar(this.getDisplayName(), BossBar.Color.RED,
 			BossBar.Style.PROGRESS);
@@ -136,7 +160,90 @@ public class YaoYongshouEntity extends LlamaEntity {
 	}
 
 	// ------------------------------------------------------------------
-	// Boss：血条、经验
+	// 形态：普通 → Boss → 濒死
+	// ------------------------------------------------------------------
+
+	/** 每 tick 判一次血量阈值：<80% 转 Boss 形态，<20% 结算附魔金苹果效果。 */
+	private void updateFormState() {
+		// 死亡那一帧血量已经是 0，别在尸体上再变身/补金苹果
+		if (!this.isAlive()) {
+			return;
+		}
+		float ratio = this.getHealth() / this.getMaxHealth();
+		if (!this.bossForm && ratio < BOSS_FORM_HEALTH_RATIO) {
+			this.enterBossForm();
+		}
+		if (ratio < LOW_HEALTH_RATIO) {
+			if (!this.lowHealthTriggered) {
+				this.lowHealthTriggered = true;
+				this.applyLowHealthEffects();
+				debug("LOW hp={}", this.getHealth());
+			}
+		} else {
+			// 回血越过 20% 后再掉下去，要能再触发一次
+			this.lowHealthTriggered = false;
+		}
+	}
+
+	/** 转 Boss 形态：体型/护甲写进属性，给永久速度 I、力量 I；单向，不会退回普通形态。 */
+	private void enterBossForm() {
+		this.bossForm = true;
+		this.setBaseAttribute(EntityAttributes.GENERIC_SCALE, BOSS_SCALE);
+		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR, BOSS_ARMOR);
+		this.applyBossBuffs();
+		debug("BOSS form enter hp={}", this.getHealth());
+	}
+
+	/** 永久增益：持续时间无限、隐藏粒子、保留图标。 */
+	private void applyBossBuffs() {
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, StatusEffectInstance.INFINITE, 0,
+				false, false, true));
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, StatusEffectInstance.INFINITE, 0,
+				false, false, true));
+	}
+
+	/** 附魔金苹果：1.8 老版（吸收 I）与 1.9+ 现版（吸收 IV + 抗性 + 抗火）合并，恢复 II 取老版 30 秒。 */
+	private void applyLowHealthEffects() {
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, LOW_HEALTH_ABSORPTION_TICKS, 3,
+				false, true, true));
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, LOW_HEALTH_REGEN_TICKS, 1,
+				false, true, true));
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, LOW_HEALTH_RESISTANCE_TICKS, 0,
+				false, true, true));
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.FIRE_RESISTANCE, LOW_HEALTH_RESISTANCE_TICKS, 0,
+				false, true, true));
+	}
+
+	/** 改属性基值；缩放变了必须重算碰撞箱，否则判定框还停在旧尺寸。 */
+	private void setBaseAttribute(RegistryEntry<EntityAttribute> attribute, double value) {
+		EntityAttributeInstance instance = this.getAttributeInstance(attribute);
+		if (instance != null) {
+			instance.setBaseValue(value);
+			this.calculateDimensions();
+		}
+	}
+
+	/** 形态进存档：重载后退回普通形态或立刻重刷濒死效果都是错的。 */
+	@Override
+	public void writeCustomDataToNbt(NbtCompound nbt) {
+		super.writeCustomDataToNbt(nbt);
+		nbt.putBoolean("BossForm", this.bossForm);
+		nbt.putBoolean("LowHealthTriggered", this.lowHealthTriggered);
+	}
+
+	@Override
+	public void readCustomDataFromNbt(NbtCompound nbt) {
+		super.readCustomDataFromNbt(nbt);
+		this.bossForm = nbt.getBoolean("BossForm");
+		this.lowHealthTriggered = nbt.getBoolean("LowHealthTriggered");
+		if (this.bossForm && !this.getWorld().isClient()) {
+			// 属性基值随 Attributes 存档；永久增益属于状态，读档时补回来
+			this.applyBossBuffs();
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Boss 血条、经验
 	// ------------------------------------------------------------------
 
 	/** 玩家开始追踪本实体时把血条加给他；离开范围或维度时摘掉（与凋灵同一套写法）。 */
@@ -152,13 +259,13 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.bossBar.removePlayer(player);
 	}
 
-	/** 血条只跟随血量：按间隔刷新，值没变就不发包；死亡当 tick 收起。 */
+	/** 血条跟随血量，但只有 Boss 形态才显示；按间隔刷新，值没变就不发包。 */
 	private void updateBossBar() {
-		boolean alive = this.isAlive() && !this.isRemoved();
-		if (this.bossBar.isVisible() != alive) {
-			this.bossBar.setVisible(alive);
+		boolean visible = this.bossForm && this.isAlive() && !this.isRemoved();
+		if (this.bossBar.isVisible() != visible) {
+			this.bossBar.setVisible(visible);
 		}
-		if (alive && this.age % BOSS_BAR_INTERVAL_TICKS == 0) {
+		if (visible && this.age % BOSS_BAR_INTERVAL_TICKS == 0) {
 			float percent = this.getHealth() / this.getMaxHealth();
 			if (percent != this.bossBar.getPercent()) {
 				this.bossBar.setPercent(percent);
@@ -335,6 +442,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (world.isClient()) {
 			return;
 		}
+		this.updateFormState();
 		this.updateBossBar();
 		long now = world.getTime();
 		// 目标死亡/被移除就立刻收手，别对着尸体重启战斗
