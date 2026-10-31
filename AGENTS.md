@@ -81,6 +81,7 @@ src/client/java/com/example/firstmob/client
 - 首发：`setTarget` 里若目标可见、在 20 格内且**不在近战距离**，立即 `shootAt` 一次，不等开火倒计时
 - 近战：`CloseMeleeGoal`，优先级 2，**3 格内**接管（`canStart` 与 `shouldContinue` 都卡 3 格），被贴脸打会立刻还手，目标一退出就还给远程
 - **3 格内禁用一切远程**：`shootAt` 判 `MELEE_RANGE_SQUARED` 直接返回；声波的蓄满判定同样被这个距离挡掉（`updateSonicMode`），拉开距离后才恢复
+- **挨打反击上限 3 次**：`damage()` 里挨打会置 `revengeMode=true; revengeShots=3`；`shootAt` / `tryAttack` 每次命中调 `countRevengeShot()`，减到 0 就 `setTarget(null)` 收手。声音触发和声波模式都会把 `revengeMode` 清掉，避免被反击计数提前打断
 - 开火前把 `yaw`/`bodyYaw`/`headYaw`/`pitch` 全部转向目标
 - **声波模式期间不开火吐口水**：`shootAt` 首行判断 `sonicMode` 直接 return；但**近战照常**
 - 同类不互殴：`setTarget` 过滤 `YaoYongshouEntity`，口水命中同类也不结算伤害
@@ -108,6 +109,7 @@ src/client/java/com/example/firstmob/client
 4. 听觉验证：在 20 格内走路/跳跃（各只贡献 1 次声音）、吃东西、挖方块；安静 5 秒应停火；跑出 25 格应放弃
 5. 声波验证：5 秒内连发 9 次 `SOUND_OTHER`（连挖 9 个方块 / 连放 9 个方块），应只出粒子束与 `entity.warden.sonic_boom`、不再吐口水；单纯走跳不应触发；跑出 40 格才停
 6. 近战验证：贴到 3 格内只挨揍、不放口水/声波；退到 3 格外立刻恢复远程
+7. 反击验证：打它一下最多还手 3 次就停；再打一次重新计 3 次
 
 ## 提交规范
 

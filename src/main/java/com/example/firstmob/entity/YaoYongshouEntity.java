@@ -65,6 +65,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int SPIT_COOLDOWN_TICKS = 34;
 	/** 吐口水最大射程（格），与羊驼默认一致。 */
 	private static final double SPIT_RANGE = 20.0D;
+	/** 挨打后的反击上限：每次被打最多还手 3 次，打完就收手。 */
+	private static final int REVENGE_SHOT_LIMIT = 3;
 	/** 近战接管距离（3 格）：这个距离内只准近战，远程（口水/声波）一律禁用。 */
 	private static final double MELEE_RANGE_SQUARED = 9.0D;
 
@@ -96,6 +98,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private long noiseTriggerTime;
 	/** 这个时间点之前，纯脚步声不再触发攻击。 */
 	private long stepTriggerAllowedAt;
+	/** 挨打反击模式：只打回去，计数用完就收手（不无限追）。 */
+	private boolean revengeMode;
+	/** 本轮反击还剩几次攻击。 */
+	private int revengeShots;
 	/** 是否处于声波模式：为 true 时只放声波、不吐口水。 */
 	private boolean sonicMode;
 	/** 距离上一次声波已经过去的 tick 数，用来做蓄力/冷却节拍。 */
@@ -195,6 +201,9 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.noiseTarget = uuid;
 		this.guaranteedShots = 1;
 		this.noiseTriggerTime = now;
+		// 声音触发的战斗不算"挨打反击"，别被反击计数提前收手
+		this.revengeMode = false;
+		this.revengeShots = 0;
 		// 锁定后交给羊驼自带的 ProjectileAttackGoal：够近就吐口水，太远就先走近
 		this.setTarget(player);
 	}
@@ -294,6 +303,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.noiseTarget = player.getUuid();
 		this.noiseTriggerTime = now;
 		this.guaranteedShots = 0;
+		this.revengeMode = false;
+		this.revengeShots = 0;
 		// 这里会立即转向；shootAt 在声波模式下直接返回，不会顺手吐口水
 		this.setTarget(player);
 	}
@@ -491,9 +502,12 @@ public class YaoYongshouEntity extends LlamaEntity {
 					// 非玩家打进来：声波模式结束，回到普通反击
 					this.exitSonicMode(this.getWorld().getTime());
 				}
-				// 挨打引发的仇恨交给原版反击逻辑处理，不再受"安静就停火"的约束
+				// 挨打引发的仇恨交给原版反击逻辑处理，不再受"安静就停火"的约束；
+				// 但反击有上限：每次挨打最多还手 3 次，打完就收手
 				this.noiseTarget = null;
 				this.guaranteedShots = 0;
+				this.revengeMode = true;
+				this.revengeShots = REVENGE_SHOT_LIMIT;
 				this.setTarget(living);
 			}
 		}
@@ -539,15 +553,30 @@ public class YaoYongshouEntity extends LlamaEntity {
 				&& player.getUuid().equals(this.noiseTarget)) {
 			this.guaranteedShots--;
 		}
+		this.countRevengeShot();
+	}
+
+	/** 反击计数：每次打出去减 1，用完就清目标收手。 */
+	private void countRevengeShot() {
+		if (!this.revengeMode) {
+			return;
+		}
+		if (--this.revengeShots <= 0) {
+			this.revengeMode = false;
+			this.setTarget(null);
+		}
 	}
 
 	/** 近战命中同样算"已经攻击过一次"。 */
 	@Override
 	public boolean tryAttack(Entity target) {
 		boolean hit = super.tryAttack(target);
-		if (hit && this.guaranteedShots > 0 && target instanceof PlayerEntity player
-				&& player.getUuid().equals(this.noiseTarget)) {
-			this.guaranteedShots--;
+		if (hit) {
+			if (this.guaranteedShots > 0 && target instanceof PlayerEntity player
+					&& player.getUuid().equals(this.noiseTarget)) {
+				this.guaranteedShots--;
+			}
+			this.countRevengeShot();
 		}
 		return hit;
 	}
