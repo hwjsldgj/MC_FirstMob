@@ -131,12 +131,12 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final float LOCK_HEALTH_RATIO = 0.6F;
 	/** 解除锁定：健康满血且这么久（600 tick = 30 秒）没被玩家打中。 */
 	private static final int LOCK_RELEASE_NO_DAMAGE_TICKS = 600;
-	/** 空闲游走：始终保持与玩家至少 16 格；20 格内注视，>20 格靠近，>36 格传送，落点约 20 格。 */
+	/** 空闲游走：始终保持与玩家至少 16 格；32 格内站定注视，>32 格靠近，>48 格传送，落点约 20 格。 */
 	private static final double IDLE_LOOK_RANGE_SQUARED = 20.0D * 20.0D;
 	private static final double IDLE_KEEP_DISTANCE = 16.0D;
 	private static final double IDLE_KEEP_SQUARED = IDLE_KEEP_DISTANCE * IDLE_KEEP_DISTANCE;
-	private static final double IDLE_APPROACH_SQUARED = 20.0D * 20.0D;
-	private static final double IDLE_TELEPORT_DISTANCE_SQUARED = 36.0D * 36.0D;
+	private static final double IDLE_APPROACH_SQUARED = 32.0D * 32.0D;
+	private static final double IDLE_TELEPORT_DISTANCE_SQUARED = 48.0D * 48.0D;
 	private static final double IDLE_TELEPORT_RADIUS_MIN = 18.0D;
 	private static final double IDLE_TELEPORT_RADIUS_MAX = 22.0D;
 	/** 玩家周围找不到 3×3×4 落点时的退路：传到 48~64 格外的安全点，不打扰玩家。 */
@@ -473,12 +473,12 @@ public class YaoYongshouEntity extends LlamaEntity {
 		} else if (distanceSquared > IDLE_APPROACH_SQUARED) {
 			this.getNavigation().startMovingTo(player, 1.0D);
 		} else {
-			// 16~20 格的合适距离：站定不动，只看人（游走目标也被 shouldStandStill 拦住）
+			// 16~32 格的合适距离：站定不动，只看人（游走目标也被 shouldStandStill 拦住）
 			this.getNavigation().stop();
 		}
 	}
 
-	/** 空闲且与玩家在 16~20 格的合适距离内：站定注视，不再游走。 */
+	/** 空闲且与玩家在 16~32 格的合适距离内：站定注视，不再游走。 */
 	private boolean shouldStandStill() {
 		if (this.lockMode || this.getTarget() != null) {
 			return false;
