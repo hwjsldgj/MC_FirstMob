@@ -60,7 +60,7 @@ docs/                               # SPEC / API / 文档索引
 
 1. `targetSelector` 始终为空；反击只由 `damage()` 计数，不靠 `RevengeGoal`。
 2. 同类永不被 `setTarget` 接受，口水永不伤害同类。
-3. `sonicMode` 为 true 时 `shootAt` 永不生成口水。
+3. `sonicMode` 为 true 时声波只在 20~40 格开炮；20 格内 `shootAt` 仍可吐口水（按距离分工，不是互斥）。
 4. 距离 ≤ 3 格不生成口水，声波也不结算（蓄力照常推进）；残血锁定模式下近战距离放宽到 5 格。
 5. 目标死亡当 tick 清空目标与攻击状态（残血锁定模式例外：改锁最近的存活玩家）。
 6. 不存在幼年形态：`isBaby()` false、`getBreedingAge()` 0、`createChild()` null。
