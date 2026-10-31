@@ -80,7 +80,8 @@ src/client/java/com/example/firstmob/client
 - 首发：`setTarget` 里若目标可见、在 20 格内且**不在近战距离**，立即 `shootAt` 一次，不等开火倒计时
 - 近战：`CloseMeleeGoal`，优先级 2，**3 格内**接管（`canStart` 与 `shouldContinue` 都卡 3 格），被贴脸打会立刻还手，目标一退出就还给远程
 - **3 格内禁用一切远程**：`shootAt` 判 `MELEE_RANGE_SQUARED` 直接返回；声波的蓄满判定同样被这个距离挡掉（`updateSonicMode`），拉开距离后才恢复
-- **挨打反击上限 3 次**：`damage()` 里挨打会置 `revengeMode=true; revengeShots=3`；`shootAt` / `tryAttack` 每次命中调 `countRevengeShot()`，减到 0 就 `setTarget(null)` 收手。声音触发和声波模式都会把 `revengeMode` 清掉，避免被反击计数提前打断
+- **挨打反击上限 3 次**：`damage()` 里挨打会置 `revengeMode=true; revengeShots=3`；`shootAt` / `tryAttack` 每次命中调 `countRevengeShot()`，减到 0 就 `setAttacker(null)` + `setTarget(null)` 收手。声音触发和声波模式都会把 `revengeMode` 清掉，避免被反击计数提前打断
+- **targetSelector 必须清空**：原版 `SpitRevengeGoal`（`RevengeGoal` 子类）会在目标被清空后立刻用"上次攻击者"重新锁定，导致反击永远停不下来。`initGoals()` 里 `this.targetSelector.clear(goal -> true)`，反击完全由 `damage()` 接管
 - 开火前把 `yaw`/`bodyYaw`/`headYaw`/`pitch` 全部转向目标
 - **声波模式期间不开火吐口水**：`shootAt` 首行判断 `sonicMode` 直接 return；但**近战照常**
 - 同类不互殴：`setTarget` 过滤 `YaoYongshouEntity`，口水命中同类也不结算伤害
@@ -95,6 +96,7 @@ src/client/java/com/example/firstmob/client
 6. **mixin 配置**：`firstmob.mixins.json` 被 `fabric.mod.json` 的 `mixins` 引用。Loom 1.15 会在 `remapJar` 阶段直接把注解里的方法名重映射成 intermediary（jar 里能看到 `method_5783`），**不需要 refmap**；手写 `"refmap"` 反而会因文件不存在报错。
 7. **目标被抢（近战优先级）**：近战放优先级 2 时**必须**在 `canStart` 和 `shouldContinue` 里都卡 3 格，否则它会一路追着目标跑、永远压住远程；只卡 `canStart` 不够，目标超出 3 格它仍会继续追。当前 `CloseMeleeGoal` 两处都卡了距离。
 8. **刷怪蛋生成幼体**：两条路径都要堵。①在方块上使用：`PassiveEntity#initialize` 在 `SpawnReason.SPAWN_EGG` 下直接 `setBreedingAge(-24000)`（绕过 `setBaby`），所以要覆盖 `isBaby`/`getBreedingAge`/`setBreedingAge`；②对着实体使用：`MobEntity.interact` 是 final，会走 `interactWithItem` → `SpawnEggItem#spawnBaby` → `createChild`，而 `LlamaEntity#createChild` 造出的是**原版小羊驼**，必须覆盖 `createChild` 返回 null。只改 `interactMob` 没用。
+9. **反击停不下来**：`LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`（`RevengeGoal` 子类，优先级 1）。它在目标被清空后会拿"上次攻击者"立刻重新锁定（日志里表现为 `target X -> null` 紧跟 `target null -> X`），所以只靠 `setTarget(null)` 永远停不下来。必须 `targetSelector.clear(goal -> true)`，并把自己的反击逻辑放进 `damage()`。
 
 ## 验证流程
 
