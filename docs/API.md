@@ -21,7 +21,7 @@
 
 | 注册表 | ID | Java 常量 | 说明 |
 | --- | --- | --- | --- |
-| `Registries.ENTITY_TYPE` | `firstmob:yao_yongshou` | `ModEntities.YAO_YONGSHOU` | 生成组 `MISC`，碰撞箱 0.6 × 1.95，眼高 1.62，追踪范围 10 |
+| `Registries.ENTITY_TYPE` | `firstmob:yao_yongshou` | `ModEntities.YAO_YONGSHOU` | 生成组 `MISC`，碰撞箱 0.6 × 1.95（缩放 2 倍后实际 1.2 × 3.9），眼高 1.62，追踪范围 10；默认属性：`max_health = 100`、`scale = 2` |
 | `Registries.ITEM` | `firstmob:yao_yongshou_spawn_egg` | `ModItems.YAO_YONGSHOU_SPAWN_EGG` | `SpawnEggItem`，蛋色 `0x8A6D3B` / `0x5C4033`，进「刷怪蛋」创造页签 |
 
 ### 2.2 音效事件
@@ -89,7 +89,12 @@ public class Firstmob implements ModInitializer {
 | `isBreedingItem` | `public boolean isBreedingItem(ItemStack stack)` | 恒 false |
 | `isBaby` / `setBaby` | `public boolean isBaby()` / `public void setBaby(boolean baby)` | 恒 false / 空实现 |
 | `getBreedingAge` / `setBreedingAge` | `public int getBreedingAge()` / `public void setBreedingAge(int age)` | 恒 0 / 空实现 |
+| `getXpToDrop` | `protected int getXpToDrop()` | 恒 200，Boss 经验 |
+| `onStartedTrackingBy` / `onStoppedTrackingBy` | `public void onStartedTrackingBy(ServerPlayerEntity player)` / `public void onStoppedTrackingBy(ServerPlayerEntity player)` | 把玩家加进 / 移出 Boss 血条，与凋灵同一套写法 |
+| `onDeath` | `public void onDeath(DamageSource source)` | 服务端收起 Boss 血条并清空玩家列表 |
 | 音效 | `protected SoundEvent getAmbientSound()`、`getHurtSound(DamageSource)`、`getDeathSound()` | 返回 `ModSounds` 中的自定义事件 |
+
+Boss 血条是实例字段 `private final ServerBossBar bossBar`（红色 `PROGRESS`，标题取实体显示名），不进 NBT：存档重新加载时会重新创建并重新分发给追踪者。
 
 状态字段（`noiseTarget`、`guaranteedShots`、`revengeMode`、`sonicMode` 等）全部私有，**不写入 NBT**，不构成存档契约。跨存档/跨版本时不保证行为状态延续。
 
@@ -113,7 +118,7 @@ public class Firstmob implements ModInitializer {
 
 | 类 | 公开成员 | 说明 |
 | --- | --- | --- |
-| `ModEntities` | `public static final EntityType<YaoYongshouEntity> YAO_YONGSHOU`；`public static void register()` | 注册类型与默认属性（羊驼属性 + 4 攻击力 + 0.5 攻击击退） |
+| `ModEntities` | `public static final EntityType<YaoYongshouEntity> YAO_YONGSHOU`；`public static void register()` | 注册类型与默认属性（羊驼属性 + 100 血量 + 2 倍体型 + 4 攻击力 + 0.5 攻击击退） |
 | `ModItems` | `public static final Item YAO_YONGSHOU_SPAWN_EGG`；`public static void register()` | 注册刷怪蛋 |
 | `ModSounds` | 6 个 `SoundEvent` 常量；`public static void register()` | 静态字段完成注册，`register()` 只为触发类加载 |
 

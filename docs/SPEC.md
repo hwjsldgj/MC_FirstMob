@@ -23,10 +23,15 @@
 | 实体 ID | `firstmob:yao_yongshou` |
 | Java 基类 | `LlamaEntity`（只沿用普通寻路 + 吐口水） |
 | 外形 | 村民 `VillagerResemblingModel` + `minecraft:textures/entity/villager/villager.png`，不继承村民实体 |
-| 碰撞箱 | 宽 0.6 × 高 1.95，眼高 1.62 |
+| 碰撞箱 | 宽 0.6 × 高 1.95，眼高 1.62（`EntityType` 基础值；`GENERIC_SCALE = 2` 后实际 1.2 × 3.9） |
 | 生成组 | `SpawnGroup.MISC` |
 | 追踪范围 | 10（`EntityType.Builder#maxTrackingRange`） |
-| 属性 | 原版羊驼属性 + `GENERIC_ATTACK_DAMAGE = 4` + `GENERIC_ATTACK_KNOCKBACK = 0.5` |
+| 属性 | 原版羊驼属性 + `GENERIC_MAX_HEALTH = 100` + `GENERIC_SCALE = 2` + `GENERIC_ATTACK_DAMAGE = 4` + `GENERIC_ATTACK_KNOCKBACK = 0.5` |
+| 血量 | 100 点（羊驼默认 15~30） |
+| 体型 | 2 倍：`generic.scale` 同时放大碰撞箱、眼高与模型渲染，`EntityType` 尺寸不用改 |
+| Boss 血条 | 屏幕顶部红色进度条，标题「姚永寿」，每 10 tick 同步一次血量，死亡当 tick 收起 |
+| 常驻 | `setPersistent()`：不因玩家远离被自然清除，只能被打死或指令移除 |
+| 掉落经验 | 200 点（`getXpToDrop`，由击杀者吸收） |
 | 幼年形态 | 不存在：`isBaby()` 恒 false、`getBreedingAge()` 恒 0 |
 | 繁殖 / 喂食 / 驯服 / 骑乘 | 全部禁用 |
 | 同类关系 | 不索敌同类，口水也不伤害同类 |
@@ -216,6 +221,10 @@
 | `SONIC_CHARGE_TICKS` | 34 | tick | 蓄力时长 |
 | `SONIC_INTERVAL_TICKS` | 160 | tick | 声波循环长度（8 秒） |
 | `SONIC_DAMAGE` | 10 | 点 | 声波伤害 |
+| `BOSS_MAX_HEALTH` | 100 | 点 | 最大生命（`ModEntities` 中的属性基值） |
+| `BOSS_SCALE` | 2 | 倍 | 体型缩放（`ModEntities` 中的属性基值） |
+| `BOSS_XP_REWARD` | 200 | 点 | 死亡掉落经验 |
+| `BOSS_BAR_INTERVAL_TICKS` | 10 | tick | Boss 血条同步间隔 |
 
 ## 7. 音效与文本
 
@@ -275,6 +284,10 @@
 | A12 | 字幕 | 触发环境音/受伤/吐口水/声波 | 字幕均为「姚永寿：…」，无「羊驼/监守者」 |
 | A13 | 和平难度 | 和平难度下被口水命中 | 仍受 4 点伤害 |
 | A14 | 死亡脱战 | 目标被击杀 | 当 tick 停止攻击并清目标 |
+| A15 | Boss 血量与体型 | 召唤一只 | 血量 100，体型是村民的 2 倍（碰撞箱同步变高变宽） |
+| A16 | Boss 血条 | 靠近并持续攻击 | 顶部出现「姚永寿」红色血条，进度随伤害下降；离开范围消失，死亡立即收条 |
+| A17 | 掉落经验 | 玩家击杀 | 掉落 200 点经验 |
+| A18 | 常驻 | 召唤后跑出很远再回来 | 实体仍在原地，不会自然消失 |
 
 ## 11. 已知限制
 
