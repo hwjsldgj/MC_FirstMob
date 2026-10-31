@@ -13,6 +13,11 @@ import net.minecraft.registry.Registry;
 import net.minecraft.util.Identifier;
 
 public final class ModEntities {
+	/** Boss 血量：羊驼默认只有 15~30，作为 boss 提到 100 点，配合屏幕顶部的血条。 */
+	private static final double BOSS_MAX_HEALTH = 100.0D;
+	/** Boss 体型：generic.scale 会自动放大碰撞箱、眼高与模型渲染，不需要改 EntityType 尺寸。 */
+	private static final double BOSS_SCALE = 2.0D;
+
 	public static final EntityType<YaoYongshouEntity> YAO_YONGSHOU = Registry.register(
 			Registries.ENTITY_TYPE,
 			Identifier.of(Firstmob.MOD_ID, "yao_yongshou"),
@@ -27,8 +32,10 @@ public final class ModEntities {
 	}
 
 	public static void register() {
-		// 羊驼属性 + 近战所需的攻击力/击退抗性（羊驼默认没有 attack_damage，调用近战会崩）
+		// 羊驼属性 + Boss 血量/体型 + 近战所需的攻击力/击退抗性（羊驼默认没有 attack_damage，调用近战会崩）
 		FabricDefaultAttributeRegistry.register(YAO_YONGSHOU, LlamaEntity.createLlamaAttributes()
+				.add(EntityAttributes.GENERIC_MAX_HEALTH, BOSS_MAX_HEALTH)
+				.add(EntityAttributes.GENERIC_SCALE, BOSS_SCALE)
 				.add(EntityAttributes.GENERIC_ATTACK_DAMAGE, 4.0)
 				.add(EntityAttributes.GENERIC_ATTACK_KNOCKBACK, 0.5));
 	}

@@ -18,6 +18,8 @@ import net.minecraft.entity.ai.goal.ProjectileAttackGoal;
 import net.minecraft.entity.ai.goal.SwimGoal;
 import net.minecraft.entity.ai.goal.WanderAroundFarGoal;
 import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.boss.BossBar;
+import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.passive.AnimalEntity;
@@ -26,6 +28,7 @@ import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.ActionResult;
@@ -93,6 +96,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int SONIC_INTERVAL_TICKS = 160;
 	/** 原版声波伤害。 */
 	private static final float SONIC_DAMAGE = 10.0F;
+	/** Boss 掉落经验：普通生物 1~3 点，boss 一次给 200 点。 */
+	private static final int BOSS_XP_REWARD = 200;
+	/** Boss 血条同步间隔：每 tick 都刷新会不停发包，10 tick（0.5 秒）足够跟手。 */
+	private static final int BOSS_BAR_INTERVAL_TICKS = 10;
 
 	/** 每个玩家的全部发声时间（含脚步），用于判断"吵不吵"。 */
 	private final Map<UUID, Deque<Long>> recentSounds = new HashMap<>();
@@ -118,9 +125,61 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private boolean sonicMode;
 	/** 距离上一次声波已经过去的 tick 数，用来做蓄力/冷却节拍。 */
 	private int sonicTicks;
+	/** Boss 血条：标题取实体显示名，进度跟随当前血量，只发给正在追踪本实体的玩家。 */
+	private final ServerBossBar bossBar = new ServerBossBar(this.getDisplayName(), BossBar.Color.RED,
+			BossBar.Style.PROGRESS);
 
 	public YaoYongshouEntity(EntityType<? extends LlamaEntity> entityType, World world) {
 		super(entityType, world);
+		// Boss 不随距离自然清除：刷怪蛋/指令生成后一直留在世界里，直到被打死
+		this.setPersistent();
+	}
+
+	// ------------------------------------------------------------------
+	// Boss：血条、经验
+	// ------------------------------------------------------------------
+
+	/** 玩家开始追踪本实体时把血条加给他；离开范围或维度时摘掉（与凋灵同一套写法）。 */
+	@Override
+	public void onStartedTrackingBy(ServerPlayerEntity player) {
+		super.onStartedTrackingBy(player);
+		this.bossBar.addPlayer(player);
+	}
+
+	@Override
+	public void onStoppedTrackingBy(ServerPlayerEntity player) {
+		super.onStoppedTrackingBy(player);
+		this.bossBar.removePlayer(player);
+	}
+
+	/** 血条只跟随血量：按间隔刷新，值没变就不发包；死亡当 tick 收起。 */
+	private void updateBossBar() {
+		boolean alive = this.isAlive() && !this.isRemoved();
+		if (this.bossBar.isVisible() != alive) {
+			this.bossBar.setVisible(alive);
+		}
+		if (alive && this.age % BOSS_BAR_INTERVAL_TICKS == 0) {
+			float percent = this.getHealth() / this.getMaxHealth();
+			if (percent != this.bossBar.getPercent()) {
+				this.bossBar.setPercent(percent);
+			}
+		}
+	}
+
+	@Override
+	public void onDeath(DamageSource source) {
+		super.onDeath(source);
+		// 死亡动画期间就收起血条，别在屏幕上留一条空血条
+		if (!this.getWorld().isClient()) {
+			this.bossBar.setVisible(false);
+			this.bossBar.clearPlayers();
+		}
+	}
+
+	/** Boss 经验：死亡掉落 200 点（原版由击杀者吸收）。 */
+	@Override
+	protected int getXpToDrop() {
+		return BOSS_XP_REWARD;
 	}
 
 	// ------------------------------------------------------------------
@@ -276,6 +335,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (world.isClient()) {
 			return;
 		}
+		this.updateBossBar();
 		long now = world.getTime();
 		// 目标死亡/被移除就立刻收手，别对着尸体重启战斗
 		LivingEntity currentTarget = this.getTarget();
