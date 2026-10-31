@@ -472,8 +472,23 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.backOffFromPlayer(player);
 		} else if (distanceSquared > IDLE_APPROACH_SQUARED) {
 			this.getNavigation().startMovingTo(player, 1.0D);
+		} else {
+			// 16~20 格的合适距离：站定不动，只看人（游走目标也被 shouldStandStill 拦住）
+			this.getNavigation().stop();
 		}
-		// 16~20 格这条带里不干预寻路，交给 WanderAroundFarGoal 自己游走
+	}
+
+	/** 空闲且与玩家在 16~20 格的合适距离内：站定注视，不再游走。 */
+	private boolean shouldStandStill() {
+		if (this.lockMode || this.getTarget() != null) {
+			return false;
+		}
+		PlayerEntity player = this.nearestPlayer();
+		if (player == null) {
+			return false;
+		}
+		double distanceSquared = this.squaredDistanceTo(player);
+		return distanceSquared >= IDLE_KEEP_SQUARED && distanceSquared <= IDLE_APPROACH_SQUARED;
 	}
 
 	/** 沿"玩家 → 自己"的方向退到 16 格以外。 */
@@ -1042,7 +1057,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.goalSelector.add(2, new CloseMeleeGoal(this, 1.2, true));
 		// 远程：太远就走近，进入射程就停下吐口水
 		this.goalSelector.add(3, new ProjectileAttackGoal(this, 1.25D, SPIT_COOLDOWN_TICKS, (float) SPIT_RANGE));
-		this.goalSelector.add(6, new WanderAroundFarGoal(this, 1.0D));
+		this.goalSelector.add(6, new IdleWanderGoal(this, 1.0D));
 		this.goalSelector.add(7, new LookAtEntityGoal(this, PlayerEntity.class, 8.0F));
 		this.goalSelector.add(8, new LookAroundGoal(this));
 	}
@@ -1275,6 +1290,23 @@ public class YaoYongshouEntity extends LlamaEntity {
 		public boolean shouldContinue() {
 			// 目标一退出 3 格马上撒手，把控制权还给 ProjectileAttackGoal
 			return this.targetInMeleeRange() && super.shouldContinue();
+		}
+	}
+
+	/** 玩家在 16~20 格的"合适距离"内就站定只看人：把原版游走拦掉。 */
+	private static class IdleWanderGoal extends WanderAroundFarGoal {
+		IdleWanderGoal(PathAwareEntity mob, double speed) {
+			super(mob, speed);
+		}
+
+		@Override
+		public boolean canStart() {
+			return !((YaoYongshouEntity) this.mob).shouldStandStill() && super.canStart();
+		}
+
+		@Override
+		public boolean shouldContinue() {
+			return !((YaoYongshouEntity) this.mob).shouldStandStill() && super.shouldContinue();
 		}
 	}
 }
