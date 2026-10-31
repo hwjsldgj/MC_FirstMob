@@ -131,21 +131,27 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final float LOCK_HEALTH_RATIO = 0.6F;
 	/** 解除锁定：健康满血且这么久（600 tick = 30 秒）没被玩家打中。 */
 	private static final int LOCK_RELEASE_NO_DAMAGE_TICKS = 600;
-	/** 空闲跟随：20 格内始终注视玩家，超过 16 格就迈步跟上；< 12 格收回加速。 */
-	private static final double IDLE_LOOK_RANGE = 20.0D;
-	private static final double IDLE_FOLLOW_START_SQUARED = 16.0D * 16.0D;
-	private static final double IDLE_FOLLOW_STOP_SQUARED = 12.0D * 12.0D;
-	/** 空闲跟随：超过 25 格直接传送到玩家侧前方（半径随机 12~18 格）。 */
-	private static final double IDLE_TELEPORT_DISTANCE_SQUARED = 25.0D * 25.0D;
-	private static final double IDLE_TELEPORT_RADIUS_MIN = 12.0D;
-	private static final double IDLE_TELEPORT_RADIUS_MAX = 18.0D;
+	/** 空闲游走：始终保持与玩家至少 16 格；20 格内注视，>20 格靠近，>36 格传送，落点约 20 格。 */
+	private static final double IDLE_LOOK_RANGE_SQUARED = 20.0D * 20.0D;
+	private static final double IDLE_KEEP_DISTANCE = 16.0D;
+	private static final double IDLE_KEEP_SQUARED = IDLE_KEEP_DISTANCE * IDLE_KEEP_DISTANCE;
+	private static final double IDLE_APPROACH_SQUARED = 20.0D * 20.0D;
+	private static final double IDLE_TELEPORT_DISTANCE_SQUARED = 36.0D * 36.0D;
+	private static final double IDLE_TELEPORT_RADIUS_MIN = 18.0D;
+	private static final double IDLE_TELEPORT_RADIUS_MAX = 22.0D;
+	/** 玩家周围找不到 3×3×4 落点时的退路：传到 48~64 格外的安全点，不打扰玩家。 */
+	private static final double FALLBACK_TELEPORT_RADIUS_MIN = 48.0D;
+	private static final double FALLBACK_TELEPORT_RADIUS_MAX = 64.0D;
 	/** 传送方向：相对玩家朝向随机偏 35°~145°，左右随机；小于 35° 就是正前方，绝不允许。 */
 	private static final double TELEPORT_MIN_ANGLE_DEGREES = 35.0D;
 	private static final double TELEPORT_MAX_ANGLE_DEGREES = 145.0D;
-	/** 每次传送最多试几个随机落点，全部失败就走路过去。 */
+	/** 每次传送最多试几个随机落点，全部失败就走退路。 */
 	private static final int TELEPORT_ATTEMPTS = 6;
-	/** 传送失败后的重试间隔，避免每 tick 全图找落点。 */
-	private static final int TELEPORT_RETRY_TICKS = 20;
+	/** 落点要求 3×3×4 的空地：水平半径 1（宽 3、深 3），高 4 格空气，脚下实心。 */
+	private static final int TELEPORT_SPACE_RADIUS = 1;
+	private static final int TELEPORT_SPACE_HEIGHT = 4;
+	/** 传送失败或退路传送后的重试间隔：5 秒。 */
+	private static final int TELEPORT_RETRY_TICKS = 100;
 	/** 低于 20% 血时攻击冷却缩短 20%（34→27 tick、160→128 tick、蓄力 34→27）。 */
 	private static final double ATTACK_BOOST_COOLDOWN_FACTOR = 0.8D;
 	/** 近战挥击动画时长（10 tick = 0.5 秒）：只记开始时的 age，渲染端按插值后的 age 自己算进度。 */
@@ -192,8 +198,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private int lockSonicTicks;
 	/** 下一次允许吐口水的世界时间：两种模式共用一套冷却，<20% 血时按 80% 计算。 */
 	private long nextSpitTick;
-	/** 是否正挂着"追击加速"（速度 II）；解除时要换回 Boss 形态自带的永久速度 I。 */
-	private boolean speedBoosted;
+	/** 当前速度等级（-1 无 / 0 速度 I / 1 速度 II / 2 速度 III）。 */
+	private int speedLevel = -1;
 	/** 下一次允许尝试传送的世界时间。 */
 	private long nextTeleportTick;
 	/** Boss 血条：标题取实体显示名，进度跟随当前血量，只发给正在追踪本实体的玩家。 */
@@ -268,10 +274,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 		debug("BOSS form enter hp={}", this.getHealth());
 	}
 
-	/** 永久增益：持续时间无限、隐藏粒子、保留图标。 */
+	/** 永久增益：力量 I。移动速度统一由 {@link #updateMovementSpeed()} 管理（游走 III / 追击 II / 常态 I）。 */
 	private void applyBossBuffs() {
-		this.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, StatusEffectInstance.INFINITE, 0,
-				false, false, true));
 		this.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, StatusEffectInstance.INFINITE, 0,
 				false, false, true));
 	}
@@ -319,12 +323,11 @@ public class YaoYongshouEntity extends LlamaEntity {
 		debug("LOCK enter hp={}", this.getHealth());
 	}
 
-	/** 解除锁定：目标与节拍全部清空，加速退回 Boss 形态的永久速度 I。 */
+	/** 解除锁定：目标与节拍全部清空，速度由 {@link #updateMovementSpeed()} 在下一 tick 收回。 */
 	private void exitLockMode() {
 		this.lockMode = false;
 		this.lockTarget = null;
 		this.lockSonicTicks = 0;
-		this.clearSpeedBoost();
 		debug("LOCK exit hp={}", this.getHealth());
 		this.setTarget(null);
 	}
@@ -368,40 +371,34 @@ public class YaoYongshouEntity extends LlamaEntity {
 		}
 	}
 
-	/** 追人时给速度 II：锁定/战斗只要不在近战距离就加速，空闲跟随按 16/12 格回滞。 */
-	private void updateChaseSpeed(boolean chasing) {
-		if (chasing && !this.speedBoosted) {
-			this.speedBoosted = true;
-			this.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, StatusEffectInstance.INFINITE, 1,
-					false, false, true));
-		} else if (!chasing && this.speedBoosted) {
-			this.clearSpeedBoost();
+	/** 移动速度：战斗追击速度 II；非战斗游走速度 III；其余按 Boss 形态速度 I / 普通形态无加速。 */
+	private void updateMovementSpeed() {
+		int desired;
+		if (this.isCombatChasing()) {
+			desired = 1;
+		} else if (!this.lockMode && this.getTarget() == null && this.nearestPlayer() != null) {
+			desired = 2;
+		} else {
+			desired = this.bossForm ? 0 : -1;
 		}
+		this.setSpeedLevel(desired);
 	}
 
-	/** 当前是否在"追玩家"：有目标且够不到；空闲状态按跟随起步距离（带 12 格回滞）。 */
-	private boolean isChasingPlayer() {
+	/** 有目标且还没到近战距离。 */
+	private boolean isCombatChasing() {
 		LivingEntity target = this.getTarget();
-		if (target != null) {
-			return this.squaredDistanceTo(target) > this.meleeRangeSquared();
-		}
-		PlayerEntity nearest = this.nearestPlayer();
-		if (nearest == null) {
-			return false;
-		}
-		double threshold = this.speedBoosted ? IDLE_FOLLOW_STOP_SQUARED : IDLE_FOLLOW_START_SQUARED;
-		return this.squaredDistanceTo(nearest) > threshold;
+		return target != null && this.squaredDistanceTo(target) > this.meleeRangeSquared();
 	}
 
-	/** 去掉速度 II 并补回 Boss 形态的永久速度 I（BossForm 时才有）。 */
-	private void clearSpeedBoost() {
-		if (!this.speedBoosted) {
+	/** 切换速度等级（-1 无 / 0 速度 I / 1 速度 II / 2 速度 III）；等级不变就不动效果。 */
+	private void setSpeedLevel(int level) {
+		if (this.speedLevel == level) {
 			return;
 		}
-		this.speedBoosted = false;
+		this.speedLevel = level;
 		this.removeStatusEffect(StatusEffects.SPEED);
-		if (this.bossForm) {
-			this.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, StatusEffectInstance.INFINITE, 0,
+		if (level >= 0) {
+			this.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, StatusEffectInstance.INFINITE, level,
 					false, false, true));
 		}
 	}
@@ -447,10 +444,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 	}
 
 	// ------------------------------------------------------------------
-	// 空闲跟随：20 格内注视玩家，>16 格跟上，>25 格传送到侧前方
+	// 空闲游走：与玩家保持 16 格以上，>36 格传送到约 20 格
 	// ------------------------------------------------------------------
 
-	/** 空闲（无目标、未锁定）时始终保持与玩家 20 格内，并盯着玩家看。 */
+	/** 空闲（无目标、未锁定）时维持 ≥16 格站距：20 格内注视，>20 靠近，<16 后退，>36 传送。 */
 	private void updateIdleFollow(long now) {
 		if (this.lockMode || this.getTarget() != null) {
 			return;
@@ -460,31 +457,55 @@ public class YaoYongshouEntity extends LlamaEntity {
 			return;
 		}
 		double distanceSquared = this.squaredDistanceTo(player);
-		if (distanceSquared <= IDLE_LOOK_RANGE * IDLE_LOOK_RANGE) {
+		if (distanceSquared <= IDLE_LOOK_RANGE_SQUARED) {
 			// 20 格内始终注视玩家（LookAtEntityGoal 只有 8 格，覆盖不到这么远）
 			this.getLookControl().lookAt(player, 30.0F, 30.0F);
 		}
 		if (distanceSquared > IDLE_TELEPORT_DISTANCE_SQUARED) {
 			if (now >= this.nextTeleportTick) {
-				this.nextTeleportTick = now + TELEPORT_RETRY_TICKS;
-				if (this.teleportNearPlayer(player)) {
-					return;
-				}
+				this.tryTeleport(player, now);
 			}
+			return;
 		}
-		if (distanceSquared > IDLE_FOLLOW_START_SQUARED) {
-			// 玩家走远了就迈步跟上；16 格以内不挤过去（传送失败时也靠走的过去）
+		if (distanceSquared < IDLE_KEEP_SQUARED) {
+			// 玩家贴得太近：沿"玩家 → 自己"的方向退到 16 格以外
+			this.backOffFromPlayer(player);
+		} else if (distanceSquared > IDLE_APPROACH_SQUARED) {
 			this.getNavigation().startMovingTo(player, 1.0D);
-		} else if (distanceSquared < 9.0D) {
-			this.getNavigation().stop();
 		}
+		// 16~20 格这条带里不干预寻路，交给 WanderAroundFarGoal 自己游走
+	}
+
+	/** 沿"玩家 → 自己"的方向退到 16 格以外。 */
+	private void backOffFromPlayer(PlayerEntity player) {
+		double dx = this.getX() - player.getX();
+		double dz = this.getZ() - player.getZ();
+		double length = Math.sqrt(dx * dx + dz * dz);
+		if (length < 1.0E-4D) {
+			dx = 0.0D;
+			dz = 1.0D;
+			length = 1.0D;
+		}
+		double targetX = player.getX() + dx / length * (IDLE_KEEP_DISTANCE + 4.0D);
+		double targetZ = player.getZ() + dz / length * (IDLE_KEEP_DISTANCE + 4.0D);
+		this.getNavigation().startMovingTo(targetX, this.getY(), targetZ, 1.0D);
+	}
+
+	/** 传送：先试玩家周围 ~20 格的侧前方；找不到 3×3×4 落点就退到 48 格外的安全点，5 秒后再试。 */
+	private void tryTeleport(PlayerEntity player, long now) {
+		if (this.teleportNearPlayer(player)) {
+			this.nextTeleportTick = now + 20;
+			return;
+		}
+		this.teleportFarFromPlayer(player);
+		this.nextTeleportTick = now + TELEPORT_RETRY_TICKS;
 	}
 
 	/**
 	 * 传送到玩家侧前方的一处随机落点。
 	 * <p>
-	 * 每次随机：方向相对玩家朝向偏 35°~145°（左右随机，永远避开正前方）、半径 12~18 格；
-	 * 最多试 {@link #TELEPORT_ATTEMPTS} 次，每次上下扫 8 格找"脚下实心、按身高留空"的落点。
+	 * 每次随机：方向相对玩家朝向偏 35°~145°（左右随机，永远避开正前方）、半径 18~22 格；
+	 * 最多试 {@link #TELEPORT_ATTEMPTS} 次，每次上下扫 8 格找 3×3×4 的空地。
 	 */
 	private boolean teleportNearPlayer(PlayerEntity player) {
 		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
@@ -504,44 +525,75 @@ public class YaoYongshouEntity extends LlamaEntity {
 			double z = player.getZ() + Math.cos(angle) * radius;
 			Vec3d landing = this.findLandingSpot(serverWorld, x, player.getY(), z);
 			if (landing != null) {
-				this.getNavigation().stop();
-				this.requestTeleport(landing.getX(), landing.getY(), landing.getZ());
-				this.setVelocity(0.0D, 0.0D, 0.0D);
-				debug("TELEPORT angle={} radius={} to {}", (int) offsetDegrees, (int) radius, landing);
+				this.doTeleport(landing);
+				debug("TELEPORT near angle={} radius={}", (int) offsetDegrees, (int) radius);
 				return true;
 			}
 		}
 		return false;
 	}
 
-	/** 在给定水平坐标上下扫 8 格，找可站立的落点；找不到返回 null。 */
+	/** 玩家周围没有合适落点时的退路：任意方向 48~64 格，尽量不打扰玩家。 */
+	private boolean teleportFarFromPlayer(PlayerEntity player) {
+		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
+			return false;
+		}
+		for (int attempt = 0; attempt < TELEPORT_ATTEMPTS; attempt++) {
+			double angle = this.random.nextDouble() * Math.PI * 2.0D;
+			double radius = FALLBACK_TELEPORT_RADIUS_MIN
+					+ this.random.nextDouble() * (FALLBACK_TELEPORT_RADIUS_MAX - FALLBACK_TELEPORT_RADIUS_MIN);
+			double x = player.getX() + Math.cos(angle) * radius;
+			double z = player.getZ() + Math.sin(angle) * radius;
+			Vec3d landing = this.findLandingSpot(serverWorld, x, player.getY(), z);
+			if (landing != null) {
+				this.doTeleport(landing);
+				debug("TELEPORT far radius={}", (int) radius);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private void doTeleport(Vec3d landing) {
+		this.getNavigation().stop();
+		this.requestTeleport(landing.getX(), landing.getY(), landing.getZ());
+		this.setVelocity(0.0D, 0.0D, 0.0D);
+	}
+
+	/** 在给定水平坐标上下扫 8 格，找 3×3×4 空地的落点；找不到返回 null。 */
 	private Vec3d findLandingSpot(ServerWorld world, double x, double baseY, double z) {
 		BlockPos.Mutable pos = new BlockPos.Mutable();
 		int startY = MathHelper.floor(baseY) + 8;
 		int endY = MathHelper.floor(baseY) - 8;
-		// Boss 形态 2 倍体型高 3.9 格，落点必须按实际身高留空
-		int requiredHeight = MathHelper.ceil(this.getHeight());
 		for (int y = startY; y >= endY; y--) {
 			pos.set(x, y, z);
 			long chunkPos = ChunkPos.toLong(pos.getX() >> 4, pos.getZ() >> 4);
 			if (!world.isChunkLoaded(chunkPos)) {
 				continue;
 			}
-			if (!world.getBlockState(pos.down()).isSolidBlock(world, pos.down())) {
-				continue;
-			}
-			boolean clear = true;
-			for (int i = 0; i < requiredHeight; i++) {
-				if (!world.getBlockState(pos.up(i)).isAir()) {
-					clear = false;
-					break;
-				}
-			}
-			if (clear) {
+			if (this.isTeleportSpaceClear(world, pos)) {
 				return new Vec3d(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D);
 			}
 		}
 		return null;
+	}
+
+	/** 3×3 脚下实心 + 3×3×4 全空气（Boss 形态 2 倍体型也放得下）。 */
+	private boolean isTeleportSpaceClear(ServerWorld world, BlockPos origin) {
+		for (int dx = -TELEPORT_SPACE_RADIUS; dx <= TELEPORT_SPACE_RADIUS; dx++) {
+			for (int dz = -TELEPORT_SPACE_RADIUS; dz <= TELEPORT_SPACE_RADIUS; dz++) {
+				BlockPos ground = origin.add(dx, -1, dz);
+				if (!world.getBlockState(ground).isSolidBlock(world, ground)) {
+					return false;
+				}
+				for (int dy = 0; dy < TELEPORT_SPACE_HEIGHT; dy++) {
+					if (!world.getBlockState(origin.add(dx, dy, dz)).isAir()) {
+						return false;
+					}
+				}
+			}
+		}
+		return true;
 	}
 
 	/** 距离 >20 格：蓄力后放声波，节拍与噪音声波一致（<20% 血时也缩短 20%）。 */
@@ -595,15 +647,11 @@ public class YaoYongshouEntity extends LlamaEntity {
 		super.readCustomDataFromNbt(nbt);
 		this.bossForm = nbt.getBoolean("BossForm");
 		this.lowHealthTriggered = nbt.getBoolean("LowHealthTriggered");
+		// 速度等级由 updateMovementSpeed 每 tick 按状态重算，读档后置空等它接管
+		this.speedLevel = -1;
 		if (this.bossForm && !this.getWorld().isClient()) {
 			// 属性基值随 Attributes 存档；永久增益属于状态，读档时补回来
 			this.applyBossBuffs();
-			// 追击加速（速度 II）不进锁定状态：读档后先收掉，等锁定逻辑重新判定
-			StatusEffectInstance speed = this.getStatusEffect(StatusEffects.SPEED);
-			if (speed != null && speed.getAmplifier() > 0) {
-				this.removeStatusEffect(StatusEffects.SPEED);
-				this.applyBossBuffs();
-			}
 		}
 	}
 
@@ -849,7 +897,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.updateNoiseAggro(now);
 			this.updateIdleFollow(now);
 		}
-		this.updateChaseSpeed(this.isChasingPlayer());
+		this.updateMovementSpeed();
 		if (now % 100L == 0L) {
 			pruneOutdated(this.recentSounds, now);
 			pruneOutdated(this.recentLoudSounds, now);
