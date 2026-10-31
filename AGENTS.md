@@ -7,7 +7,8 @@
 Minecraft **1.21.1 Fabric** 模组，新增生物「姚永寿」（`firstmob:yao_yongshou`）与对应刷怪蛋。
 
 - **外形**：村民（`VillagerResemblingModel` + 原版村民贴图），只是借模型，不继承村民实体
-- **行为**：`extends LlamaEntity`（羊驼）——羊驼寻路、跟随商队、远程吐口水，额外补近战
+- **行为**：`extends LlamaEntity`（羊驼），但**只沿用普通寻路 + 吐口水**；商队、绑定/骑乘、繁殖、诱惑、跟随父母等目标全部移除
+- **没有幼年形态**：`isBaby()` 恒 false、`setBaby()` 空实现；不能繁殖、不能喂食/驯服
 - **口水**：自定义弹体 `YaoYongshouSpitEntity`，4 点伤害 + 击退，自定义伤害类型 `firstmob:yao_spit`
 - **刷怪蛋**：自定义贴图的平面模型（无厚度、正反共面）
 
@@ -79,6 +80,7 @@ src/client/java/com/example/firstmob/client
 5. **刷怪蛋模型**：**不能**写 `"parent": "item/generated"`——那会走 `builtin/generated`，按 alpha 生成 1/16 厚的挤压壳（154 个 quad），自定义 `elements` 被忽略，表现为重影/厚度。当前做法：无 parent，内联 `display`/`gui_light`，单个元素 `from [0,0,7.5] to [16,16,7.5]`，同时给 `north`/`south` 面，最终 **2 个共面 quad**。
 6. **mixin 配置**：`firstmob.mixins.json` 被 `fabric.mod.json` 的 `mixins` 引用。Loom 1.15 会在 `remapJar` 阶段直接把注解里的方法名重映射成 intermediary（jar 里能看到 `method_5783`），**不需要 refmap**；手写 `"refmap"` 反而会因文件不存在报错。
 7. **目标被抢**：近战若放优先级 2 会压住远程；必须 ≥4。
+8. **刷怪蛋生成幼体**：`PassiveEntity#initialize` 在 `SpawnReason.SPAWN_EGG` 下有 5% 概率 `setBaby(true)`，所以即使改目标也要覆盖 `isBaby()`/`setBaby()` 才能彻底没有幼年形态；繁殖另用 `isBreedingItem`/`canBreedWith` 关掉。
 
 ## 验证流程
 

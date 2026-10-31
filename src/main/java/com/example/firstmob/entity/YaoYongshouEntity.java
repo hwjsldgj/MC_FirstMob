@@ -9,14 +9,21 @@ import java.util.UUID;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.ai.goal.LookAroundGoal;
+import net.minecraft.entity.ai.goal.LookAtEntityGoal;
 import net.minecraft.entity.ai.goal.MeleeAttackGoal;
-import net.minecraft.entity.ai.goal.PrioritizedGoal;
 import net.minecraft.entity.ai.goal.ProjectileAttackGoal;
+import net.minecraft.entity.ai.goal.SwimGoal;
+import net.minecraft.entity.ai.goal.WanderAroundFarGoal;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.mob.PathAwareEntity;
+import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.passive.LlamaEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
 import net.minecraft.sound.SoundEvent;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Box;
 import net.minecraft.world.World;
@@ -220,18 +227,49 @@ public class YaoYongshouEntity extends LlamaEntity {
 
 	@Override
 	protected void initGoals() {
-		// 羊驼原生 AI：游泳/绑定/商队/吐口水(ProjectileAttackGoal)/逃跑/繁殖/诱惑/闲逛/注视
+		// 只保留目标选择器（被攻击后的反击），行为目标全部重建
 		super.initGoals();
-		// 换掉羊驼默认的吐口水目标（间隔 40 tick），改成 34 tick：冷却缩短 0.3 秒
-		this.goalSelector.getGoals().stream()
-				.map(PrioritizedGoal::getGoal)
-				.filter(goal -> goal instanceof ProjectileAttackGoal)
-				.toList()
-				.forEach(this.goalSelector::remove);
+		// 羊驼的商队、绑定/骑乘、繁殖、诱惑、跟随父母等一概不要，只留普通寻路 + 吐口水
+		this.goalSelector.clear(goal -> true);
+		this.goalSelector.add(0, new SwimGoal(this));
+		// 远程：太远就走近，进入射程就停下吐口水
 		this.goalSelector.add(3, new ProjectileAttackGoal(this, 1.25D, SPIT_COOLDOWN_TICKS, (float) SPIT_RANGE));
-		// 远程优先：羊驼的 ProjectileAttackGoal(优先级 3) 会自己"太远就走近、进入射程就停下吐口水"。
-		// 近战放到优先级 4，只在远程目标丢失/不可见时才补位，不会抢远程的优先级。
+		// 近战放优先级 4，只在贴身时补位，不会抢远程的优先级
 		this.goalSelector.add(4, new CloseMeleeGoal(this, 1.2, true));
+		this.goalSelector.add(6, new WanderAroundFarGoal(this, 1.0D));
+		this.goalSelector.add(7, new LookAtEntityGoal(this, PlayerEntity.class, 8.0F));
+		this.goalSelector.add(8, new LookAroundGoal(this));
+	}
+
+	// ------------------------------------------------------------------
+	// 没有幼年形态、不能繁殖、不能驯服/骑乘
+	// ------------------------------------------------------------------
+
+	/** 刷怪蛋有 5% 概率生成幼年个体（PassiveEntity#initialize），这里直接断掉。 */
+	@Override
+	public boolean isBaby() {
+		return false;
+	}
+
+	@Override
+	public void setBaby(boolean baby) {
+		// 姚永寿没有幼年形态
+	}
+
+	@Override
+	public boolean isBreedingItem(ItemStack stack) {
+		return false;
+	}
+
+	@Override
+	public boolean canBreedWith(AnimalEntity other) {
+		return false;
+	}
+
+	/** 不接受喂食、驯服、上鞍等交互。 */
+	@Override
+	public ActionResult interactMob(PlayerEntity player, Hand hand) {
+		return ActionResult.PASS;
 	}
 
 	/** 同类不互殴：任何目标选择器想把同类当目标都会被拦下。 */

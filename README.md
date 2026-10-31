@@ -20,9 +20,10 @@
 ### 实体 `firstmob:yao_yongshou`
 
 - **外形**：`VillagerResemblingModel` + 原版村民贴图，只借用模型，不继承村民实体
-- **行为基类**：`LlamaEntity` —— 羊驼的寻路、跟随商队、繁殖/诱惑、音效
+- **行为基类**：`LlamaEntity`，但只沿用**普通寻路 + 吐口水**：商队、绑定/骑乘、繁殖、诱惑、跟随父母等目标全部移除
 - **属性**：沿用羊驼默认值，额外补 `attack_damage = 4`、`attack_knockback = 0.5`
   （羊驼默认没有攻击力，直接近战会因缺少属性而崩溃）
+- **没有幼年形态**：`isBaby()` 恒为 false、`setBaby()` 空实现，也不能繁殖或被喂食/驯服
 
 ### 攻击
 
