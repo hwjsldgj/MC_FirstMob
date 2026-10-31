@@ -32,21 +32,27 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final double MAX_CHASE_RANGE_SQUARED = MAX_CHASE_RANGE * MAX_CHASE_RANGE;
 	/** 计数窗口：只统计最近 5 秒（100 tick）内的声音。 */
 	private static final int SOUND_WINDOW_TICKS = 100;
-	/** 同一玩家在窗口内发声达到这个次数就主动开火（即"大于 2 次"）。 */
+	/** 窗口内声音达到这个次数就主动开火（即"大于 2 次"）。 */
 	private static final int SOUND_THRESHOLD = 3;
-	/** 窗口内发声次数低于这个值就停火（即"小于 2 次"）。 */
+	/** 窗口内"非脚步"声音低于这个值就停火（即"小于 2 次"）。 */
 	private static final int RELEASE_SOUND_COUNT = 2;
 	/** "至少攻击一次"的保证：和计数窗口一样只给 5 秒，安静下来就不再死追。 */
 	private static final int GUARANTEE_TIMEOUT_TICKS = 100;
+	/** 停火后，纯脚步声要等这么久才能再次触发（避免走两步就重新开打）。 */
+	private static final int STEP_RETRIGGER_COOLDOWN = 100;
 
-	/** 每个玩家最近几次发声的游戏时间，超过窗口的会自动丢弃。 */
+	/** 每个玩家的全部发声时间（含脚步），用于判断"吵不吵"。 */
 	private final Map<UUID, Deque<Long>> recentSounds = new HashMap<>();
+	/** 每个玩家的"非脚步"发声时间，用于判断还要不要继续打。 */
+	private final Map<UUID, Deque<Long>> recentLoudSounds = new HashMap<>();
 	/** 当前由"吵闹"触发攻击的目标；null 表示不是声音触发的攻击。 */
 	private UUID noiseTarget;
 	/** 本次触发还欠几次攻击（至少 1 次）。 */
 	private int guaranteedShots;
 	/** 本轮触发的时间，用于保证期超时。 */
 	private long noiseTriggerTime;
+	/** 这个时间点之前，纯脚步声不再触发攻击。 */
+	private long stepTriggerAllowedAt;
 
 	public YaoYongshouEntity(EntityType<? extends LlamaEntity> entityType, World world) {
 		super(entityType, world);
@@ -54,68 +60,108 @@ public class YaoYongshouEntity extends LlamaEntity {
 
 	/**
 	 * 玩家每发出一次音效就会调用这里（见 {@code PlayerSoundMixin}）。
-	 * 找出 20 格内的所有姚永寿，分别记一次账。
+	 * 脚步声算"声音"但不维持仇恨，其它音效两者都算。
 	 */
 	public static void onPlayerSound(PlayerEntity player, SoundEvent sound) {
 		World world = player.getWorld();
-		if (world.isClient() || !player.isAlive() || player.isSpectator() || isExcludedSound(sound)) {
+		if (world.isClient() || !player.isAlive() || player.isSpectator()) {
 			return;
 		}
+		Identifier id = sound.getId();
+		String path = id == null ? "" : id.getPath();
+		if (path.endsWith(".death")) {
+			return;
+		}
+		// 被姚永寿自己吐出来的口水打中不算"吵闹"，否则仇恨会自己续上
+		if (path.endsWith(".hurt") && isHurtByYao(player)) {
+			return;
+		}
+		dispatch(player, !path.endsWith(".step"));
+	}
+
+	/** 挖方块、与方块交互这些不走音效通道的动作，直接记一次"巨响"（见 {@code PlayerInteractionMixin}）。 */
+	public static void onPlayerAction(PlayerEntity player) {
+		World world = player.getWorld();
+		if (world.isClient() || !player.isAlive() || player.isSpectator()) {
+			return;
+		}
+		dispatch(player, true);
+	}
+
+	/** 把一次"声音"分发给 20 格内的所有姚永寿。 */
+	private static void dispatch(PlayerEntity player, boolean loud) {
+		World world = player.getWorld();
 		Box area = player.getBoundingBox().expand(HEARING_RANGE);
 		for (YaoYongshouEntity yao : world.getEntitiesByClass(YaoYongshouEntity.class, area,
 				candidate -> candidate.squaredDistanceTo(player) <= HEARING_RANGE_SQUARED)) {
-			yao.hearSoundFrom(player);
+			yao.hearSoundFrom(player, loud);
 		}
 	}
 
-	/**
-	 * 不参与计数的音效：
-	 * <ul>
-	 *     <li>脚步：走路不算主动吵闹，否则玩家一边走就一边把仇恨续着</li>
-	 *     <li>受伤/死亡：被自己打出来的声音会把仇恨自己续上，形成死循环</li>
-	 * </ul>
-	 */
-	private static boolean isExcludedSound(SoundEvent sound) {
-		Identifier id = sound.getId();
-		if (id == null) {
+	private static boolean isHurtByYao(PlayerEntity player) {
+		DamageSource source = player.getRecentDamageSource();
+		if (source == null) {
 			return false;
 		}
-		String path = id.getPath();
-		return path.endsWith(".step") || path.endsWith(".hurt") || path.endsWith(".death");
+		return source.isOf(YaoYongshouSpitEntity.DAMAGE_TYPE) || source.getAttacker() instanceof YaoYongshouEntity;
 	}
 
-	/** 记账：5 秒内同一玩家吵闹 3 次以上就主动锁定他，并保证至少吐一次口水。 */
-	private void hearSoundFrom(PlayerEntity player) {
+	/** 记账：窗口内声音够多就触发；只要还吵着就继续打。 */
+	private void hearSoundFrom(PlayerEntity player, boolean loud) {
+		UUID uuid = player.getUuid();
 		long now = this.getWorld().getTime();
-		Deque<Long> timestamps = this.recentSounds.computeIfAbsent(player.getUuid(), uuid -> new ArrayDeque<>());
+		record(this.recentSounds, uuid, now);
+		if (loud) {
+			record(this.recentLoudSounds, uuid, now);
+		}
+		if (uuid.equals(this.noiseTarget)) {
+			// 已经在打他了，只更新计数
+			return;
+		}
+		if (countInWindow(this.recentSounds, uuid, now) < SOUND_THRESHOLD) {
+			return;
+		}
+		if (!loud && now < this.stepTriggerAllowedAt) {
+			// 刚停火不久，别被脚步声立刻叫回去
+			return;
+		}
+		this.noiseTarget = uuid;
+		this.guaranteedShots = 1;
+		this.noiseTriggerTime = now;
+		// 锁定后交给羊驼自带的 ProjectileAttackGoal：够近就吐口水，太远就先走近
+		this.setTarget(player);
+	}
+
+	private static void record(Map<UUID, Deque<Long>> map, UUID uuid, long now) {
+		Deque<Long> timestamps = map.computeIfAbsent(uuid, key -> new ArrayDeque<>());
 		timestamps.addLast(now);
+		prune(timestamps, now);
+	}
+
+	private static void prune(Deque<Long> timestamps, long now) {
 		while (!timestamps.isEmpty() && now - timestamps.peekFirst() > SOUND_WINDOW_TICKS) {
 			timestamps.removeFirst();
 		}
-		if (timestamps.size() >= SOUND_THRESHOLD && !player.getUuid().equals(this.noiseTarget)) {
-			// 新的一轮触发：锁定目标 + 记下"至少攻击一次"的欠账
-			this.noiseTarget = player.getUuid();
-			this.guaranteedShots = 1;
-			this.noiseTriggerTime = now;
-			// 锁定后交给羊驼自带的 ProjectileAttackGoal：够近就吐口水，太远就先走近
-			this.setTarget(player);
-		}
 	}
 
-	/** 统计并清理某玩家在窗口内的发声次数。 */
-	private int countSoundsInWindow(UUID uuid, long now) {
-		Deque<Long> timestamps = this.recentSounds.get(uuid);
+	private static int countInWindow(Map<UUID, Deque<Long>> map, UUID uuid, long now) {
+		Deque<Long> timestamps = map.get(uuid);
 		if (timestamps == null) {
 			return 0;
 		}
-		while (!timestamps.isEmpty() && now - timestamps.peekFirst() > SOUND_WINDOW_TICKS) {
-			timestamps.removeFirst();
-		}
+		prune(timestamps, now);
 		if (timestamps.isEmpty()) {
-			this.recentSounds.remove(uuid);
+			map.remove(uuid);
 			return 0;
 		}
 		return timestamps.size();
+	}
+
+	private static void pruneOutdated(Map<UUID, Deque<Long>> map, long now) {
+		map.entrySet().removeIf(entry -> {
+			prune(entry.getValue(), now);
+			return entry.getValue().isEmpty();
+		});
 	}
 
 	@Override
@@ -134,12 +180,9 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.guaranteedShots = 0;
 		}
 		this.updateNoiseAggro(now);
-		if (now % 100L == 0L && !this.recentSounds.isEmpty()) {
-			// 玩家走远/不再发声后清掉记录，避免长期占内存
-			this.recentSounds.keySet().removeIf(uuid -> {
-				Deque<Long> stamps = this.recentSounds.get(uuid);
-				return stamps == null || stamps.isEmpty() || now - stamps.peekLast() > SOUND_WINDOW_TICKS;
-			});
+		if (now % 100L == 0L) {
+			pruneOutdated(this.recentSounds, now);
+			pruneOutdated(this.recentLoudSounds, now);
 		}
 	}
 
@@ -161,10 +204,11 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.guaranteedShots = 0;
 			guaranteed = false;
 		}
-		if (!guaranteed && this.countSoundsInWindow(this.noiseTarget, now) < RELEASE_SOUND_COUNT) {
-			// 窗口内已经吵不到 2 次了：停止攻击
+		// 判断"吵不吵"只看非脚步声：光走路不算持续吵闹
+		if (!guaranteed && countInWindow(this.recentLoudSounds, this.noiseTarget, now) < RELEASE_SOUND_COUNT) {
 			this.setTarget(null);
 			this.noiseTarget = null;
+			this.stepTriggerAllowedAt = now + STEP_RETRIGGER_COOLDOWN;
 		}
 	}
 
