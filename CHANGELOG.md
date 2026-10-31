@@ -2,9 +2,14 @@
 
 ## 未发布
 
+### 修复
+
+- 声波距离统一：普通（噪音）与锁定模式都只有 **20~40 格**才开炮，20 格内改回口水/近战；40 格以外只追不打（此前普通模式 3~40 格都会放声波，锁定模式还没有 40 格上限）
+- 修复普通模式口水被吞：`shootAt` 不再做全局限流，切目标的首发一枪必定打出；锁定模式用独立的 `nextSpitTick` 计时，不再与 `ProjectileAttackGoal` 的 34 tick 冷却叠加成约 68 tick 的空窗
+
 ### 新增
 
-- 外形改为僵尸：`BipedEntityModel` + `EntityModelLayers.ZOMBIE` + 原版僵尸贴图，待机双臂前伸；近战命中播放 10 tick 的抬臂抡下动画（`ATTACK_ANIM` 数据同步，不依赖 `handSwingProgress`）
+- 外形改为僵尸：`BipedEntityModel` + `EntityModelLayers.ZOMBIE` + 原版僵尸贴图，待机双臂前伸；近战命中播放 10 tick 的抬臂抡下动画（`ATTACK_START_AGE` 数据同步，按渲染端 age 插值）
   - 原版 `CrossbowPosing#meleeAttack` 的微幅摆动在 2 倍体型下几乎看不清，所以攻击段改成三段插值的自定义抡臂
   - 动画进度改用「命中时的 age + 渲染端 tickDelta」计算，逐帧插值，不再按整数 tick 跳变（修复卡顿与延迟）
   - 铁傀儡模型泛型绑死在 `IronGolemEntity`，无法直接复用；抡臂动作参考了它的双臂砸地
