@@ -77,9 +77,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private final Map<UUID, Deque<Long>> recentSounds = new HashMap<>();
 	/** 每个玩家的"非脚步"发声时间，用于判断还要不要继续打。 */
 	private final Map<UUID, Deque<Long>> recentLoudSounds = new HashMap<>();
-	/** 每个玩家上一次脚步 / 非脚步发声的 tick，用于同一 tick 内去重。 */
+	/** 每个玩家上一次脚步 / 真噪音 / 被姚永寿打中发声的 tick，用于同一 tick 内去重。 */
 	private final Map<UUID, Long> lastStepTicks = new HashMap<>();
 	private final Map<UUID, Long> lastLoudTicks = new HashMap<>();
+	private final Map<UUID, Long> lastHitTicks = new HashMap<>();
 	/** 当前由"吵闹"触发攻击的目标；null 表示不是声音触发的攻击。 */
 	private UUID noiseTarget;
 	/** 本次触发还欠几次攻击（至少 1 次）。 */
@@ -99,7 +100,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 
 	/**
 	 * 玩家每发出一次音效就会调用这里（见 {@code PlayerSoundMixin}）。
-	 * 脚步声算"声音"但不维持仇恨，其它音效两者都算。
+	 * 脚步声、以及被姚永寿打出来的受伤音效只算"一次发声"，不维持仇恨。
 	 */
 	public static void onPlayerSound(PlayerEntity player, SoundEvent sound) {
 		World world = player.getWorld();
@@ -111,9 +112,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (path.endsWith(".death")) {
 			return;
 		}
-		// 只处理玩家自己发出的音效（挂的就是 PlayerEntity#playSound）；
-		// 脚步单独标记：计入"触发"，但不计入声波所需的"大声"
-		dispatch(player, !path.endsWith(".step"));
+		boolean step = path.endsWith(".step");
+		// 被姚永寿打出的受伤音效只记 1 次，而且不算"持续吵闹"（否则追打会自己续上，永远停不下来）
+		boolean hitByYao = path.endsWith(".hurt") && isHurtByYao(player);
+		dispatch(player, !step && !hitByYao, step);
 	}
 
 	/** 挖方块、与方块交互这些不走音效通道的动作，直接记一次"巨响"（见 {@code PlayerInteractionMixin}）。 */
@@ -122,26 +124,34 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (world.isClient() || !player.isAlive() || player.isSpectator()) {
 			return;
 		}
-		dispatch(player, true);
+		dispatch(player, true, false);
 	}
 
 	/** 把一次"声音"分发给 20 格内的所有姚永寿。 */
-	private static void dispatch(PlayerEntity player, boolean loud) {
+	private static void dispatch(PlayerEntity player, boolean loud, boolean step) {
 		World world = player.getWorld();
 		Box area = player.getBoundingBox().expand(HEARING_RANGE);
 		for (YaoYongshouEntity yao : world.getEntitiesByClass(YaoYongshouEntity.class, area,
 				candidate -> candidate.squaredDistanceTo(player) <= HEARING_RANGE_SQUARED)) {
-			yao.hearSoundFrom(player, loud);
+			yao.hearSoundFrom(player, loud, step);
 		}
 	}
 
-	/** 记账：窗口内声音够多就触发；只要还吵着就继续打。 */
-	private void hearSoundFrom(PlayerEntity player, boolean loud) {
+	private static boolean isHurtByYao(PlayerEntity player) {
+		DamageSource source = player.getRecentDamageSource();
+		if (source == null) {
+			return false;
+		}
+		return source.isOf(YaoYongshouSpitEntity.DAMAGE_TYPE) || source.getAttacker() instanceof YaoYongshouEntity;
+	}
+
+	/** 记账：窗口内声音够多就触发；只有"真噪音"才维持仇恨。 */
+	private void hearSoundFrom(PlayerEntity player, boolean loud, boolean step) {
 		UUID uuid = player.getUuid();
 		long now = this.getWorld().getTime();
 		// 同一次发声可能在同一 tick 触发好几条音效（比如被口水打中：受伤音效 + 其它），
-		// 同一 tick、同一类（脚步 / 非脚步）只记 1 次，避免一次事件被算成好几次
-		Map<UUID, Long> lastTicks = loud ? this.lastLoudTicks : this.lastStepTicks;
+		// 同一 tick、同一类只记 1 次，避免一次事件被算成好几次
+		Map<UUID, Long> lastTicks = step ? this.lastStepTicks : (loud ? this.lastLoudTicks : this.lastHitTicks);
 		Long last = lastTicks.get(uuid);
 		if (last != null && last.longValue() == now) {
 			return;
@@ -168,7 +178,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (countInWindow(this.recentSounds, uuid, now) < SOUND_THRESHOLD) {
 			return;
 		}
-		if (!loud && now < this.stepTriggerAllowedAt) {
+		if (step && now < this.stepTriggerAllowedAt) {
 			// 刚停火不久，别被脚步声立刻叫回去
 			return;
 		}
