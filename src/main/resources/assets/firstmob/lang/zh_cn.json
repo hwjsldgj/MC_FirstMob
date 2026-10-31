@@ -1,4 +1,8 @@
 {
   "entity.firstmob.yao_yongshou": "姚永寿",
-  "item.firstmob.yao_yongshou_spawn_egg": "姚永寿刷怪蛋"
+  "item.firstmob.yao_yongshou_spawn_egg": "姚永寿刷怪蛋",
+  "subtitles.firstmob.entity.yao_yongshou.spit": "姚永寿：吐口水",
+  "subtitles.firstmob.entity.yao_yongshou.sonic_charge": "姚永寿：蓄力",
+  "subtitles.firstmob.entity.yao_yongshou.sonic_boom": "姚永寿：音波尖啸",
+  "death.attack.yao_spit": "%1$s 被 %2$s 的口水淹死了"
 }

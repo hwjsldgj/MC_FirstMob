@@ -44,7 +44,8 @@ src/main/java/com/example/firstmob
 │   └── PlayerInteractionMixin.java # 挖/放方块也算"弄出动静"
 └── registry
     ├── ModEntities.java            # 实体类型 + 属性
-    └── ModItems.java               # 刷怪蛋
+    ├── ModItems.java               # 刷怪蛋
+    └── ModSounds.java              # 自定义音效事件（复用原版声音文件，换字幕）
 src/client/java/com/example/firstmob/client
 ├── FirstmobClient.java             # 客户端入口（只注册渲染器）
 └── YaoYongshouRenderer.java        # 村民模型渲染器
@@ -72,7 +73,8 @@ src/client/java/com/example/firstmob/client
 - **节拍**：进入后蓄力 34 tick（`SONIC_CHARGE_TICKS`）开炮，之后每 160 tick（`SONIC_INTERVAL_TICKS`，8 秒）一次；每 tick `faceTarget`
 - **停止条件**：只有目标**离开 40 格**（`SONIC_RANGE`）或**死亡**才 `exitSonicMode`；期间不看"安静停火"，也不走 25 格放弃
 - **解除后**：清掉该玩家的 `recentSounds` / `recentLoudSounds`，需要重新攒够 9 次
-- **实现**：1.21.1 没有独立的声波实体（原版是 `SonicBoomTask` 里直接结算），这里照抄同一套：沿射线 `ParticleTypes.SONIC_BOOM` 粒子 + `entity.warden.sonic_boom` 音效（音量 3）+ `damageSources.sonicBoom(this)` 10 点 + `addVelocity(dir * 2.5 * (1-击退抗性))`
+- **实现**：1.21.1 没有独立的声波实体（原版是 `SonicBoomTask` 里直接结算），这里照抄同一套：沿射线 `ParticleTypes.SONIC_BOOM` 粒子 + `ModSounds.SONIC_BOOM`（自定义事件，复用原版声音文件，字幕「姚永寿：音波尖啸」）+ `damageSources.sonicBoom(this)` 10 点 + `addVelocity(dir * 2.5 * (1-击退抗性))`
+- 音效事件注册在 `ModSounds`，`assets/firstmob/sounds.json` 把它们指到原版声音文件；字幕/死亡信息文案在 `assets/firstmob/lang/*.json`
 
 ### 攻击
 

@@ -2,6 +2,7 @@ package com.example.firstmob;
 
 import com.example.firstmob.registry.ModEntities;
 import com.example.firstmob.registry.ModItems;
+import com.example.firstmob.registry.ModSounds;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
@@ -20,6 +21,7 @@ public class Firstmob implements ModInitializer {
 	public void onInitialize() {
 		ModEntities.register();
 		ModItems.register();
+		ModSounds.register();
 
 		// 把刷怪蛋放进创造模式「刷怪蛋」页签
 		ItemGroupEvents.modifyEntriesEvent(ItemGroups.SPAWN_EGGS)

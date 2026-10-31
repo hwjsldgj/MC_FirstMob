@@ -1,0 +1,20 @@
+{
+  "entity.yao_yongshou.spit": {
+    "subtitle": "subtitles.firstmob.entity.yao_yongshou.spit",
+    "sounds": [
+      "minecraft:entity/llama/spit"
+    ]
+  },
+  "entity.yao_yongshou.sonic_charge": {
+    "subtitle": "subtitles.firstmob.entity.yao_yongshou.sonic_charge",
+    "sounds": [
+      "minecraft:entity/warden/sonic_charge"
+    ]
+  },
+  "entity.yao_yongshou.sonic_boom": {
+    "subtitle": "subtitles.firstmob.entity.yao_yongshou.sonic_boom",
+    "sounds": [
+      "minecraft:entity/warden/sonic_boom"
+    ]
+  }
+}

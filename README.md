@@ -60,6 +60,11 @@
 - 自定义弹道：速度 2.5、散布 0.4，并按重力做抛物线补偿，命中率高于原版羊驼
 - **同类免伤**：同类之间不索敌（`setTarget` 过滤），口水命中同类也不结算伤害
 
+### 字幕与死亡信息
+
+- 吐口水、声波蓄力、声波释放各自注册了 `firstmob:entity.yao_yongshou.*` 音效事件（声音文件复用原版羊驼/监守者），字幕显示「姚永寿：吐口水 / 姚永寿：蓄力 / 姚永寿：音波尖啸」
+- 口水击杀的死亡信息：`death.attack.yao_spit` →「XX 被 YY 的口水淹死了」
+
 ### 刷怪蛋 `firstmob:yao_yongshou_spawn_egg`
 
 - 贴图：`assets/firstmob/textures/item/yao_yongshou_spawn_egg.png`（原图见 `素材/yao_yongshou.png`）

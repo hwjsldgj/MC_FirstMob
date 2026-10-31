@@ -26,7 +26,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
@@ -363,7 +362,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.setTarget(player);
 		}
 		if (this.sonicTicks == 0) {
-			this.playSound(SoundEvents.ENTITY_WARDEN_SONIC_CHARGE, 3.0F, 1.0F);
+			this.playSound(com.example.firstmob.registry.ModSounds.SONIC_CHARGE, 3.0F, 1.0F);
 		}
 		this.faceTarget(player);
 		this.sonicTicks++;
@@ -393,7 +392,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 						1, 0.0D, 0.0D, 0.0D, 0.0D);
 			}
 		}
-		this.playSound(SoundEvents.ENTITY_WARDEN_SONIC_BOOM, 3.0F, 1.0F);
+		this.playSound(com.example.firstmob.registry.ModSounds.SONIC_BOOM, 3.0F, 1.0F);
 		if (target.damage(world.getDamageSources().sonicBoom(this), SONIC_DAMAGE)) {
 			double resistance = 1.0D - target.getAttributeValue(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE);
 			double horizontal = 2.5D * resistance;
@@ -577,7 +576,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		spit.setVelocity(dx, aimY - spit.getY() + drop, dz, speed, 0.4F);
 
 		world.playSound(null, this.getX(), this.getY(), this.getZ(),
-				net.minecraft.sound.SoundEvents.ENTITY_LLAMA_SPIT, net.minecraft.sound.SoundCategory.NEUTRAL, 1.0F, 1.0F);
+				com.example.firstmob.registry.ModSounds.YAO_SPIT, net.minecraft.sound.SoundCategory.NEUTRAL, 1.0F, 1.0F);
 		world.spawnEntity(spit);
 
 		// 本轮"至少攻击一次"已兑现
