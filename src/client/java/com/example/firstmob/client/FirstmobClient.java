@@ -8,7 +8,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 public class FirstmobClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
-		// 村民模型 + 羊驼行为
+		// 僵尸模型 + 羊驼行为
 		EntityRendererRegistry.register(ModEntities.YAO_YONGSHOU, YaoYongshouRenderer::new);
 	}
 }

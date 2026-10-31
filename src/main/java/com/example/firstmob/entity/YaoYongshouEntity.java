@@ -46,7 +46,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
 /**
- * 姚永寿：只保留村民的外形（由渲染器负责），
+ * 姚永寿：只保留僵尸的外形（由渲染器负责），
  * 行为完全改用羊驼：寻路、跟随商队、远程吐口水；近距离额外加近战。
  */
 public class YaoYongshouEntity extends LlamaEntity {

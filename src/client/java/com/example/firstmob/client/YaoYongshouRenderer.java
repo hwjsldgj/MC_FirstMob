@@ -5,17 +5,16 @@ import com.example.firstmob.entity.YaoYongshouEntity;
 import net.minecraft.client.render.entity.EntityRendererFactory;
 import net.minecraft.client.render.entity.MobEntityRenderer;
 import net.minecraft.client.render.entity.model.EntityModelLayers;
-import net.minecraft.client.render.entity.model.VillagerResemblingModel;
 import net.minecraft.util.Identifier;
 
 /**
- * 只借用村民的实体模型与贴图，其余行为由 YaoYongshouEntity（羊驼）提供。
+ * 僵尸外形：人形骨架 + 原版僵尸贴图，手臂姿势由 {@link YaoYongshouModel} 复用僵尸动画。
  */
-public class YaoYongshouRenderer extends MobEntityRenderer<YaoYongshouEntity, VillagerResemblingModel<YaoYongshouEntity>> {
-	private static final Identifier TEXTURE = Identifier.of("minecraft", "textures/entity/villager/villager.png");
+public class YaoYongshouRenderer extends MobEntityRenderer<YaoYongshouEntity, YaoYongshouModel> {
+	private static final Identifier TEXTURE = Identifier.of("minecraft", "textures/entity/zombie/zombie.png");
 
 	public YaoYongshouRenderer(EntityRendererFactory.Context context) {
-		super(context, new VillagerResemblingModel<>(context.getPart(EntityModelLayers.VILLAGER)), 0.5F);
+		super(context, new YaoYongshouModel(context.getPart(EntityModelLayers.ZOMBIE)), 0.5F);
 	}
 
 	@Override
