@@ -21,7 +21,7 @@
 
 | 注册表 | ID | Java 常量 | 说明 |
 | --- | --- | --- | --- |
-| `Registries.ENTITY_TYPE` | `firstmob:yao_yongshou` | `ModEntities.YAO_YONGSHOU` | 生成组 `MISC`，碰撞箱 0.6 × 1.95（缩放 2 倍后实际 1.2 × 3.9），眼高 1.62，追踪范围 10；默认属性：`max_health = 100`、`scale = 2` |
+| `Registries.ENTITY_TYPE` | `firstmob:yao_yongshou` | `ModEntities.YAO_YONGSHOU` | 生成组 `MISC`，碰撞箱 0.6 × 1.95（缩放 2 倍后实际 1.2 × 3.9），眼高 1.62，追踪范围 10；默认属性：`max_health = 100`、`scale = 2`、`armor = 20` |
 | `Registries.ITEM` | `firstmob:yao_yongshou_spawn_egg` | `ModItems.YAO_YONGSHOU_SPAWN_EGG` | `SpawnEggItem`，蛋色 `0x8A6D3B` / `0x5C4033`，进「刷怪蛋」创造页签 |
 
 ### 2.2 音效事件
@@ -118,7 +118,7 @@ Boss 血条是实例字段 `private final ServerBossBar bossBar`（红色 `PROGR
 
 | 类 | 公开成员 | 说明 |
 | --- | --- | --- |
-| `ModEntities` | `public static final EntityType<YaoYongshouEntity> YAO_YONGSHOU`；`public static void register()` | 注册类型与默认属性（羊驼属性 + 100 血量 + 2 倍体型 + 4 攻击力 + 0.5 攻击击退） |
+| `ModEntities` | `public static final EntityType<YaoYongshouEntity> YAO_YONGSHOU`；`public static void register()` | 注册类型与默认属性（羊驼属性 + 100 血量 + 2 倍体型 + 20 护甲 + 4 攻击力 + 0.5 攻击击退） |
 | `ModItems` | `public static final Item YAO_YONGSHOU_SPAWN_EGG`；`public static void register()` | 注册刷怪蛋 |
 | `ModSounds` | 6 个 `SoundEvent` 常量；`public static void register()` | 静态字段完成注册，`register()` 只为触发类加载 |
 
