@@ -4,7 +4,9 @@
 
 ### 新增
 
-- 外形改为僵尸：`BipedEntityModel` + `EntityModelLayers.ZOMBIE` + 原版僵尸贴图，待机双臂前伸、近战挥击复用原版 `CrossbowPosing#meleeAttack`（铁傀儡模型泛型绑死在 `IronGolemEntity`，无法直接复用）
+- 外形改为僵尸：`BipedEntityModel` + `EntityModelLayers.ZOMBIE` + 原版僵尸贴图，待机双臂前伸；近战命中播放 10 tick 的抬臂抡下动画（`ATTACK_ANIM` 数据同步，不依赖 `handSwingProgress`）
+  - 原版 `CrossbowPosing#meleeAttack` 的微幅摆动在 2 倍体型下几乎看不清，所以攻击段改成三段插值的自定义抡臂
+  - 铁傀儡模型泛型绑死在 `IronGolemEntity`，无法直接复用；抡臂动作参考了它的双臂砸地
 - 姚永寿改为分阶段 Boss：
   - 生成时为普通形态：100 血、护甲 0、体型 1 倍、不显示血条
   - 血量掉到 80% 以下转 Boss 形态（单向）：体型 2 倍、护甲 20、屏幕顶部红色 Boss 血条，并获得永久速度 I、力量 I

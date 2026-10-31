@@ -22,7 +22,8 @@
 | --- | --- |
 | 实体 ID | `firstmob:yao_yongshou` |
 | Java 基类 | `LlamaEntity`（只沿用普通寻路 + 吐口水） |
-| 外形 | 僵尸 `BipedEntityModel`（`EntityModelLayers.ZOMBIE`）+ `minecraft:textures/entity/zombie/zombie.png`；待机双臂前伸、近战挥击都复用原版 `CrossbowPosing#meleeAttack` |
+| 外形 | 僵尸 `BipedEntityModel`（`EntityModelLayers.ZOMBIE`）+ `minecraft:textures/entity/zombie/zombie.png`；待机双臂前伸复用原版 `CrossbowPosing#meleeAttack` |
+| 近战动画 | 命中时由实体写入 `ATTACK_ANIM`（数据同步，10 tick = 0.5 秒）：抬到头顶 → 抡下 → 回位，不使用 `handSwingProgress` |
 | 渲染与实体分离 | 外形不继承任何原版生物实体；模型只影响观感 |
 | 碰撞箱 | 宽 0.6 × 高 1.95，眼高 1.62（`EntityType` 基础值；`GENERIC_SCALE = 2` 后实际 1.2 × 3.9） |
 | 生成组 | `SpawnGroup.MISC` |

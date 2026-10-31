@@ -86,11 +86,12 @@ docs/                               # SPEC / API / 文档索引
 2. **击退方向**：`LivingEntity.takeKnockback(strength, x, z)` 内部会取反，要传「从目标指向攻击者」的向量。
 3. **属性缺失**：羊驼默认没有 `GENERIC_ATTACK_DAMAGE`，近战会崩；`ModEntities` 里补了 `attack_damage=4`、`attack_knockback=0.5`。
 4. **渲染取值**：模型层用 `context.getPart(EntityModelLayers.ZOMBIE)`（64×64 人形骨架），不是 `bakeLayer`；原版 `ZombieEntityModel` / `IronGolemEntityModel` 的泛型绑死在对应实体上，只能借骨架和 `CrossbowPosing`，不能直接实例化。
-5. **刷怪蛋模型**：不能写 `"parent": "item/generated"`——那会走 `builtin/generated`，按 alpha 生成 1/16 厚的挤压壳（154 个 quad），自定义 `elements` 被忽略，表现为重影/厚度。当前做法：无 parent，内联 `display`/`gui_light`，单个元素 `from [0,0,7.5] to [16,16,7.5]`，同时给 `north`/`south` 面，最终 2 个共面 quad。
-6. **mixin 配置**：Loom 1.15 在 `remapJar` 阶段把注解里的方法名重映射成 intermediary，**不需要 refmap**；手写 `"refmap"` 反而会因文件不存在报错。
-7. **近战抢目标**：`CloseMeleeGoal` 必须在 `canStart` 和 `shouldContinue` 里都卡 3 格；只卡 `canStart` 会让它一路追着目标跑、永远压住远程。
-8. **刷怪蛋生成幼体**：两条路径都要堵。①在方块上使用：`PassiveEntity#initialize` 在 `SpawnReason.SPAWN_EGG` 下直接 `setBreedingAge(-24000)`（绕过 `setBaby`），所以要覆盖 `isBaby`/`getBreedingAge`/`setBreedingAge`；②对着实体使用：`MobEntity.interact` 是 final，会走 `interactWithItem` → `SpawnEggItem#spawnBaby` → `createChild`，而 `LlamaEntity#createChild` 造出的是原版小羊驼，必须覆盖成返回 null。只改 `interactMob` 没用。
-9. **反击停不下来**：`LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`（`RevengeGoal` 子类，优先级 1），目标被清空后会拿"上次攻击者"立刻重新锁定（日志表现为 `target X -> null` 紧跟 `target null -> X`）。必须 `targetSelector.clear(goal -> true)`，反击逻辑放 `damage()`。
+5. **攻击动画**：别依赖 `handSwingProgress`（非玩家实体上很难确认是否发包）；命中时写 `ATTACK_ANIM`（`TrackedData<Integer>`，10 tick）并在模型里插值，客户端一定看得到。
+6. **刷怪蛋模型**：不能写 `"parent": "item/generated"`——那会走 `builtin/generated`，按 alpha 生成 1/16 厚的挤压壳（154 个 quad），自定义 `elements` 被忽略，表现为重影/厚度。当前做法：无 parent，内联 `display`/`gui_light`，单个元素 `from [0,0,7.5] to [16,16,7.5]`，同时给 `north`/`south` 面，最终 2 个共面 quad。
+7. **mixin 配置**：Loom 1.15 在 `remapJar` 阶段把注解里的方法名重映射成 intermediary，**不需要 refmap**；手写 `"refmap"` 反而会因文件不存在报错。
+8. **近战抢目标**：`CloseMeleeGoal` 必须在 `canStart` 和 `shouldContinue` 里都卡距离；只卡 `canStart` 会让它一路追着目标跑、永远压住远程。
+9. **刷怪蛋生成幼体**：两条路径都要堵。①在方块上使用：`PassiveEntity#initialize` 在 `SpawnReason.SPAWN_EGG` 下直接 `setBreedingAge(-24000)`（绕过 `setBaby`），所以要覆盖 `isBaby`/`getBreedingAge`/`setBreedingAge`；②对着实体使用：`MobEntity.interact` 是 final，会走 `interactWithItem` → `SpawnEggItem#spawnBaby` → `createChild`，而 `LlamaEntity#createChild` 造出的是原版小羊驼，必须覆盖成返回 null。只改 `interactMob` 没用。
+10. **反击停不下来**：`LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`（`RevengeGoal` 子类，优先级 1），目标被清空后会拿"上次攻击者"立刻重新锁定（日志表现为 `target X -> null` 紧跟 `target null -> X`）。必须 `targetSelector.clear(goal -> true)`，反击逻辑放 `damage()`。
 
 ## 验证流程
 

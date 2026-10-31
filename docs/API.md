@@ -90,6 +90,7 @@ public class Firstmob implements ModInitializer {
 | `isBaby` / `setBaby` | `public boolean isBaby()` / `public void setBaby(boolean baby)` | 恒 false / 空实现 |
 | `getBreedingAge` / `setBreedingAge` | `public int getBreedingAge()` / `public void setBreedingAge(int age)` | 恒 0 / 空实现 |
 | `getXpToDrop` | `protected int getXpToDrop()` | 恒 500，Boss 经验 |
+| 攻击动画 | `public float getAttackAnimationProgress()`；`tryAttack` 命中时把 `ATTACK_ANIM` 设为 10，每 tick 递减 | 0 = 待机，0~1 = 挥击进度；数据同步（`TrackedData<Integer>`），客户端模型据此播放抡臂 |
 | `shootAt` 冷却 | 内部字段 `nextSpitTick` | `shootAt` 自行限流：基础 34 tick，`<20%` 血时 27 tick；锁定模式与 `ProjectileAttackGoal` 共用 |
 | `updateLockMode`（私有） | 每 tick 一次 | `<60%` 血时接管目标与攻击：优先打它的玩家，其次最近玩家；<5 格近战、5~20 格口水、>20 格声波；>40 格挂速度 II、<20 格退回速度 I |
 | `onStartedTrackingBy` / `onStoppedTrackingBy` | `public void onStartedTrackingBy(ServerPlayerEntity player)` / `public void onStoppedTrackingBy(ServerPlayerEntity player)` | 把玩家加进 / 移出 Boss 血条，与凋灵同一套写法 |
@@ -135,7 +136,7 @@ Boss 血条是实例字段 `private final ServerBossBar bossBar`（红色 `PROGR
 | --- | --- |
 | `FirstmobClient` | `onInitializeClient()` 中注册 `YaoYongshouRenderer` |
 | `YaoYongshouRenderer` | `MobEntityRenderer<YaoYongshouEntity, YaoYongshouModel>`，阴影 0.5，贴图 `minecraft:textures/entity/zombie/zombie.png`，模型层 `EntityModelLayers.ZOMBIE` |
-| `YaoYongshouModel` | `BipedEntityModel<YaoYongshouEntity>`；`setAngles` 里调用 `CrossbowPosing.meleeAttack(leftArm, rightArm, false, handSwingProgress, animationProgress)`，得到僵尸的双臂前伸与挥击动画 |
+| `YaoYongshouModel` | `BipedEntityModel<YaoYongshouEntity>`；待机调用 `CrossbowPosing.meleeAttack(leftArm, rightArm, false, ...)` 得到僵尸双臂前伸；`getAttackAnimationProgress() > 0` 时改用三段插值的抡臂（抬起→抡下→回位） |
 
 渲染器只影响观感，删除/替换不影响服务端逻辑；但客户端必须能解析该实体类型，否则会回退为默认渲染。
 
