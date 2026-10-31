@@ -6,7 +6,8 @@ import com.example.firstmob.entity.YaoYongshouEntity;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnGroup;
-import net.minecraft.entity.passive.VillagerEntity;
+import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.passive.LlamaEntity;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.util.Identifier;
@@ -26,7 +27,9 @@ public final class ModEntities {
 	}
 
 	public static void register() {
-		// 使用村民的属性（20 点生命、行走速度等）
-		FabricDefaultAttributeRegistry.register(YAO_YONGSHOU, VillagerEntity.createVillagerAttributes());
+		// 羊驼属性 + 近战所需的攻击力/击退抗性（羊驼默认没有 attack_damage，调用近战会崩）
+		FabricDefaultAttributeRegistry.register(YAO_YONGSHOU, LlamaEntity.createLlamaAttributes()
+				.add(EntityAttributes.GENERIC_ATTACK_DAMAGE, 4.0)
+				.add(EntityAttributes.GENERIC_ATTACK_KNOCKBACK, 0.5));
 	}
 }
