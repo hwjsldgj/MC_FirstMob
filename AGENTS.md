@@ -37,7 +37,7 @@ $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 src/main/java/com/example/firstmob
 ├── Firstmob.java                   # 入口：注册实体/物品、加入创造页签、日志
 ├── entity
-│   ├── YaoYongshouEntity.java      # 羊驼行为 + 听觉索敌 + 吐口水弹道
+│   ├── YaoYongshouEntity.java      # 羊驼行为 + 听觉索敌 + 吐口水弹道 + 声波
 │   └── YaoYongshouSpitEntity.java  # 口水：伤害、击退、同类免伤
 ├── mixin
 │   ├── PlayerSoundMixin.java       # 拦 PlayerEntity#playSound，收集玩家音效
@@ -62,6 +62,16 @@ src/client/java/com/example/firstmob/client
 - **放弃追击**：目标超过 **25 格**立即清目标
 - 不计数的声音：脚步声（不计入"维持"，但计入"触发"）、玩家死亡音效、**由姚永寿自己造成的受伤音效**（否则仇恨会自我续期）
 - 挖掘 / 放方块通过 `ServerPlayerInteractionManager` 的 mixin 记为一次"巨响"（`loud = true`）
+- **25 格放弃、安静停火只在普通模式生效**；声波模式有自己的 40 格规则，见下
+
+### 声波（监守者）
+
+- **触发**：同一玩家在 20 格内、5 秒窗口内声音 **≥9 次**（"超过 8 次"）→ `enterSonicMode`（脚步声也计入，冲刺容易达成）
+- **互斥**：`sonicMode` 为 true 时 `shootAt` 立刻返回，不吐口水；吐口水阶段攒够 9 次会升级
+- **节拍**：进入后蓄力 34 tick（`SONIC_CHARGE_TICKS`）开炮，之后每 100 tick（`SONIC_INTERVAL_TICKS`）一次；每 tick `faceTarget`
+- **停止条件**：只有目标**离开 40 格**（`SONIC_RANGE`）或**死亡**才 `exitSonicMode`；期间不看"安静停火"，也不走 25 格放弃
+- **解除后**：清掉该玩家的 `recentSounds` / `recentLoudSounds`，需要重新攒够 9 次
+- **实现**：1.21.1 没有独立的声波实体（原版是 `SonicBoomTask` 里直接结算），这里照抄同一套：沿射线 `ParticleTypes.SONIC_BOOM` 粒子 + `entity.warden.sonic_boom` 音效（音量 3）+ `damageSources.sonicBoom(this)` 10 点 + `addVelocity(dir * 2.5 * (1-击退抗性))`
 
 ### 攻击
 
@@ -69,6 +79,7 @@ src/client/java/com/example/firstmob/client
 - 首发：`setTarget` 里若目标可见且在 20 格内，**立即** `shootAt` 一次，不等开火倒计时
 - 近战：`CloseMeleeGoal`，优先级 4，仅 3 格内补位
 - 开火前把 `yaw`/`bodyYaw`/`headYaw`/`pitch` 全部转向目标
+- **声波模式期间不开火吐口水**：`shootAt` 首行判断 `sonicMode` 直接 return；`setTarget` 的首发也带同样判断
 - 同类不互殴：`setTarget` 过滤 `YaoYongshouEntity`，口水命中同类也不结算伤害
 
 ## 踩过的坑（别改回去）
@@ -92,6 +103,7 @@ src/client/java/com/example/firstmob/client
    /give @s firstmob:yao_yongshou_spawn_egg
    ```
 4. 听觉验证：在 20 格内走路（3 步触发）、吃东西、挖方块；安静 5 秒应停火；跑出 25 格应放弃
+5. 声波验证：5 秒内连发 9 次声音（吃 9 个食物 / 连挖 9 个方块），应只出粒子束与 `entity.warden.sonic_boom`、不再吐口水；跑出 40 格才停
 
 ## 提交规范
 
@@ -103,5 +115,6 @@ src/client/java/com/example/firstmob/client
 
 - 刷怪蛋是单面平面模型：侧视是一条线，掉落物转到背面看不到图案
 - 创造模式玩家免疫伤害，只会被击退
+- 声波沿用原版 `minecraft:sonic_boom`（`scaling: always`）：和平难度伤害归零；创造模式免疫伤害时连击退也不会结算，只剩粒子与音效
 - 方块音效按「挖/放动作」计数，不是按真实音效事件；播放声音/开箱子以外的方块交互也会算一次
 - 只保留村民外观，交易、职业、脑 AI 一概不继承

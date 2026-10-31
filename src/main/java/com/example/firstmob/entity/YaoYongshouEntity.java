@@ -9,6 +9,7 @@ import java.util.UUID;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.ai.goal.LookAroundGoal;
 import net.minecraft.entity.ai.goal.LookAtEntityGoal;
 import net.minecraft.entity.ai.goal.MeleeAttackGoal;
@@ -22,12 +23,16 @@ import net.minecraft.entity.passive.LlamaEntity;
 import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundEvent;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
 /**
@@ -56,6 +61,18 @@ public class YaoYongshouEntity extends LlamaEntity {
 	/** 吐口水最大射程（格），与羊驼默认一致。 */
 	private static final double SPIT_RANGE = 20.0D;
 
+	/** 5 秒内声音"超过 8 次"（即 ≥9 次）就升级成监守者声波。 */
+	private static final int SONIC_SOUND_THRESHOLD = 9;
+	/** 声波模式：目标跑出 40 格才停（比吐口水的 25 格远）。 */
+	private static final double SONIC_RANGE = 40.0D;
+	private static final double SONIC_RANGE_SQUARED = SONIC_RANGE * SONIC_RANGE;
+	/** 原版监守者开炮前蓄力 34 tick。 */
+	private static final int SONIC_CHARGE_TICKS = 34;
+	/** 两发声波间隔 100 tick（原版 RUN_TIME 60 + 冷却 40），即 5 秒。 */
+	private static final int SONIC_INTERVAL_TICKS = 100;
+	/** 原版声波伤害。 */
+	private static final float SONIC_DAMAGE = 10.0F;
+
 	/** 每个玩家的全部发声时间（含脚步），用于判断"吵不吵"。 */
 	private final Map<UUID, Deque<Long>> recentSounds = new HashMap<>();
 	/** 每个玩家的"非脚步"发声时间，用于判断还要不要继续打。 */
@@ -68,6 +85,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private long noiseTriggerTime;
 	/** 这个时间点之前，纯脚步声不再触发攻击。 */
 	private long stepTriggerAllowedAt;
+	/** 是否处于声波模式：为 true 时只放声波、不吐口水。 */
+	private boolean sonicMode;
+	/** 距离上一次声波已经过去的 tick 数，用来做蓄力/冷却节拍。 */
+	private int sonicTicks;
 
 	public YaoYongshouEntity(EntityType<? extends LlamaEntity> entityType, World world) {
 		super(entityType, world);
@@ -129,6 +150,15 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (loud) {
 			record(this.recentLoudSounds, uuid, now);
 		}
+		// 5 秒内声音超过 8 次：升级成声波模式，优先于吐口水
+		if (!this.sonicMode && countInWindow(this.recentSounds, uuid, now) >= SONIC_SOUND_THRESHOLD) {
+			this.enterSonicMode(player, now);
+			return;
+		}
+		// 声波模式下不再走吐口水的触发/维持逻辑
+		if (this.sonicMode) {
+			return;
+		}
 		if (uuid.equals(this.noiseTarget)) {
 			// 已经在打他了，只更新计数
 			return;
@@ -187,12 +217,16 @@ public class YaoYongshouEntity extends LlamaEntity {
 			return;
 		}
 		long now = world.getTime();
-		// 目标跑出 25 格：直接放弃追击（不再寻路、不再吐口水）
-		LivingEntity chaseTarget = this.getTarget();
-		if (chaseTarget instanceof PlayerEntity player && this.squaredDistanceTo(player) > MAX_CHASE_RANGE_SQUARED) {
-			this.setTarget(null);
-			this.noiseTarget = null;
-			this.guaranteedShots = 0;
+		if (this.sonicMode) {
+			this.updateSonicMode(now);
+		} else {
+			// 目标跑出 25 格：直接放弃追击（声波模式另算，见 updateSonicMode）
+			LivingEntity chaseTarget = this.getTarget();
+			if (chaseTarget instanceof PlayerEntity player && this.squaredDistanceTo(player) > MAX_CHASE_RANGE_SQUARED) {
+				this.setTarget(null);
+				this.noiseTarget = null;
+				this.guaranteedShots = 0;
+			}
 		}
 		this.updateNoiseAggro(now);
 		if (now % 100L == 0L) {
@@ -203,7 +237,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 
 	/** 声音触发的攻击：安静下来就停火，但触发后至少要把那一次攻击打完。 */
 	private void updateNoiseAggro(long now) {
-		if (this.noiseTarget == null) {
+		if (this.noiseTarget == null || this.sonicMode) {
 			return;
 		}
 		LivingEntity target = this.getTarget();
@@ -225,6 +259,100 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.noiseTarget = null;
 			this.stepTriggerAllowedAt = now + STEP_RETRIGGER_COOLDOWN;
 		}
+	}
+
+	// ------------------------------------------------------------------
+	// 监守者声波：5 秒内发声超过 8 次时触发，与吐口水互斥
+	// ------------------------------------------------------------------
+
+	/** 升级成声波模式：锁定目标，目标跑到 40 格外或死亡前不解除。 */
+	private void enterSonicMode(PlayerEntity player, long now) {
+		this.sonicMode = true;
+		this.sonicTicks = 0;
+		this.noiseTarget = player.getUuid();
+		this.noiseTriggerTime = now;
+		this.guaranteedShots = 0;
+		// 这里会立即转向；shootAt 在声波模式下直接返回，不会顺手吐口水
+		this.setTarget(player);
+	}
+
+	/** 退出声波模式，并清掉这名玩家的声音记录，避免刚出 40 格又被旧记录拉回去。 */
+	private void exitSonicMode(long now) {
+		// 用记录的 UUID 清账，避免目标被临时抢走时清错人
+		if (this.noiseTarget != null) {
+			this.recentSounds.remove(this.noiseTarget);
+			this.recentLoudSounds.remove(this.noiseTarget);
+		}
+		this.sonicMode = false;
+		this.sonicTicks = 0;
+		this.setTarget(null);
+		this.noiseTarget = null;
+		this.guaranteedShots = 0;
+		this.stepTriggerAllowedAt = now + STEP_RETRIGGER_COOLDOWN;
+	}
+
+	/** 声波模式下每 tick 走一遍：蓄力 34 tick → 开炮 → 冷却到 100 tick 再来。 */
+	private void updateSonicMode(long now) {
+		// 直接按 UUID 找锁定目标：中途被别的怪抢仇恨也不会退出声波模式
+		PlayerEntity player = this.noiseTarget == null ? null : this.getWorld().getPlayerByUuid(this.noiseTarget);
+		if (player == null || !player.isAlive() || this.squaredDistanceTo(player) > SONIC_RANGE_SQUARED) {
+			// 只有这两种情况会停：目标死亡（或下线）或离开 40 格
+			this.exitSonicMode(now);
+			return;
+		}
+		if (this.getTarget() != player) {
+			this.setTarget(player);
+		}
+		if (this.sonicTicks == 0) {
+			this.playSound(SoundEvents.ENTITY_WARDEN_SONIC_CHARGE, 3.0F, 1.0F);
+		}
+		this.faceTarget(player);
+		this.sonicTicks++;
+		if (this.sonicTicks == SONIC_CHARGE_TICKS) {
+			this.fireSonicBoom(player);
+		}
+		if (this.sonicTicks >= SONIC_INTERVAL_TICKS) {
+			this.sonicTicks = 0;
+		}
+	}
+
+	/** 原版监守者声波：胸口的粒子束 + 10 点穿甲伤害 + 击退，只结算给锁定目标。 */
+	private void fireSonicBoom(PlayerEntity target) {
+		World world = this.getWorld();
+		if (world.isClient()) {
+			return;
+		}
+		Vec3d start = this.getPos().add(0.0D, this.getHeight() * 0.6D, 0.0D);
+		Vec3d delta = target.getEyePos().subtract(start);
+		Vec3d direction = delta.normalize();
+		int steps = MathHelper.floor(delta.length()) + 7;
+		if (world instanceof ServerWorld serverWorld) {
+			for (int i = 1; i < steps; i++) {
+				Vec3d point = start.add(direction.multiply(i));
+				serverWorld.spawnParticles(ParticleTypes.SONIC_BOOM, point.getX(), point.getY(), point.getZ(),
+						1, 0.0D, 0.0D, 0.0D, 0.0D);
+			}
+		}
+		this.playSound(SoundEvents.ENTITY_WARDEN_SONIC_BOOM, 3.0F, 1.0F);
+		if (target.damage(world.getDamageSources().sonicBoom(this), SONIC_DAMAGE)) {
+			double resistance = 1.0D - target.getAttributeValue(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE);
+			double horizontal = 2.5D * resistance;
+			double vertical = 0.5D * resistance;
+			target.addVelocity(direction.getX() * horizontal, direction.getY() * vertical,
+					direction.getZ() * horizontal);
+		}
+	}
+
+	/** 开火/开炮前把身体和头都转向目标。 */
+	private void faceTarget(LivingEntity target) {
+		double dx = target.getX() - this.getX();
+		double dz = target.getZ() - this.getZ();
+		double horizontal = Math.sqrt(dx * dx + dz * dz);
+		float yaw = (float) (Math.atan2(dz, dx) * 180.0 / Math.PI) - 90.0F;
+		this.setYaw(yaw);
+		this.bodyYaw = yaw;
+		this.headYaw = yaw;
+		this.setPitch((float) (-(Math.atan2(target.getBodyY(0.4) - this.getEyeY(), horizontal) * 180.0 / Math.PI)));
 	}
 
 	@Override
@@ -310,7 +438,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 			return;
 		}
 		// 第一次锁定的瞬间就先打一枪：看得见且在射程内就不等原版的开火倒计时
-		if (this.squaredDistanceTo(target) <= SPIT_RANGE * SPIT_RANGE
+		if (!this.sonicMode && this.squaredDistanceTo(target) <= SPIT_RANGE * SPIT_RANGE
 				&& this.getVisibilityCache().canSee(target)) {
 			this.shootAt(target, 1.0F);
 		}
@@ -319,7 +447,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	@Override
 	public boolean damage(DamageSource source, float amount) {
 		boolean damaged = super.damage(source, amount);
-		if (damaged) {
+		// 声波模式期间不换目标：挨打也继续锁着原来那个人
+		if (damaged && !this.sonicMode) {
 			// 被谁打就锁定谁（创造模式玩家也照样反击）；同类造成的伤害不还手
 			Entity attacker = source.getAttacker();
 			if (attacker instanceof LivingEntity living && living != this && !(living instanceof YaoYongshouEntity)) {
@@ -335,7 +464,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	@Override
 	public void shootAt(LivingEntity target, float pullProgress) {
 		World world = this.getWorld();
-		if (world.isClient()) {
+		// 声波模式与吐口水互斥：同一时间只用一种远程手段
+		if (world.isClient() || this.sonicMode) {
 			return;
 		}
 		double dx = target.getX() - this.getX();
@@ -344,11 +474,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		double aimY = target.getBodyY(0.4);
 
 		// 开火前先把身体和头都转向玩家
-		float yaw = (float) (Math.atan2(dz, dx) * 180.0 / Math.PI) - 90.0F;
-		this.setYaw(yaw);
-		this.bodyYaw = yaw;
-		this.headYaw = yaw;
-		this.setPitch((float) (-(Math.atan2(aimY - this.getEyeY(), horizontal) * 180.0 / Math.PI)));
+		this.faceTarget(target);
 
 		YaoYongshouSpitEntity spit = new YaoYongshouSpitEntity(EntityType.LLAMA_SPIT, world);
 		spit.setOwner(this);
