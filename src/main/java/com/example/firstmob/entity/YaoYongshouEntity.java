@@ -66,13 +66,18 @@ public class YaoYongshouEntity extends LlamaEntity {
 	/** 临时诊断日志开关：只记录触发/停火/反击/开炮/声波，定位完就关掉。 */
 	private static final boolean DEBUG = true;
 
-	private static void debug(String message, Object... args) {
+	private void debug(String message, Object... args) {
 		if (DEBUG) {
-			com.example.firstmob.Firstmob.LOGGER.info("[Yao] " + message, args);
+			Object[] full = new Object[args.length + 1];
+			full[0] = this.getId();
+			System.arraycopy(args, 0, full, 1, args.length);
+			com.example.firstmob.Firstmob.LOGGER.info("[Yao#{}] " + message, full);
 		}
 	}
 	/** 挨打后的反击上限：每次被打最多还手 3 次，打完就收手。 */
 	private static final int REVENGE_SHOT_LIMIT = 3;
+	/** 反击超时：5 秒内一次都没打出去（追不到 / 目标无敌）就放弃。 */
+	private static final int REVENGE_TIMEOUT_TICKS = 100;
 	/** 近战接管距离（3 格）：这个距离内只准近战，远程（口水/声波）一律禁用。 */
 	private static final double MELEE_RANGE_SQUARED = 9.0D;
 
@@ -106,6 +111,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private boolean revengeMode;
 	/** 本轮反击还剩几次攻击。 */
 	private int revengeShots;
+	/** 反击超时时间点。 */
+	private long revengeDeadline;
 	/** 是否处于声波模式：为 true 时只放声波、不吐口水。 */
 	private boolean sonicMode;
 	/** 距离上一次声波已经过去的 tick 数，用来做蓄力/冷却节拍。 */
@@ -258,6 +265,13 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.guaranteedShots = 0;
 			this.revengeMode = false;
 			this.revengeShots = 0;
+		}
+		// 反击超时：5 秒内一次都没打出去就放弃，避免目标被永久粘住
+		if (this.revengeMode && now > this.revengeDeadline) {
+			this.revengeMode = false;
+			this.revengeShots = 0;
+			this.setAttacker(null);
+			this.setTarget(null);
 		}
 		if (this.sonicMode) {
 			this.updateSonicMode(now);
@@ -523,6 +537,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 				this.guaranteedShots = 0;
 				this.revengeMode = true;
 				this.revengeShots = REVENGE_SHOT_LIMIT;
+				this.revengeDeadline = this.getWorld().getTime() + REVENGE_TIMEOUT_TICKS;
 				this.setTarget(living);
 			}
 		}
@@ -578,6 +593,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (!this.revengeMode) {
 			return;
 		}
+		this.revengeDeadline = this.getWorld().getTime() + REVENGE_TIMEOUT_TICKS;
 		if (--this.revengeShots <= 0) {
 			this.revengeMode = false;
 			// 连"上次攻击者"一起忘掉，避免任何原版逻辑把它重新锁回来
