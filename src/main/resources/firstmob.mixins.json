@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "com.example.firstmob.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"PlayerSoundMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

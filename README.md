@@ -30,6 +30,16 @@
 - **近战补位**：`CloseMeleeGoal`（优先级 4，仅 3 格内），只在远程不可用时触发
 - **开火前面向目标**：身体与头部立即转向目标，再生成口水
 
+### 听觉（主动攻击）
+
+- 监听 **玩家发出的音效**（吃东西、喝药、落地、游泳、攻击、挖掘……），拦截点在 `PlayerEntity#playSound`
+- **不计数**：脚步声（走路不算吵闹）、受伤/死亡音效（否则被自己打出来的声音会把仇恨续成死循环）
+- 20 格内同一玩家在 **5 秒**内发声 **≥3 次** → 主动锁定他，随后交给远程 AI 走近并吐口水
+- 窗口内发声 **<2 次** → 停止攻击（目标清空）
+- **每次触发至少攻击一次**：锁定后 5 秒内必定补上一口，打不出去（被墙挡等）就作罢
+- **25 格**之外放弃追击（无论目标是声音触发还是被激怒）
+- 挨打引发的仇恨不受"安静停火"约束（原版反击逻辑照常）
+
 ### 口水 `YaoYongshouSpitEntity`
 
 - 命中造成 **4 点伤害 + 0.9 击退**（推离姚永寿的方向）
@@ -71,14 +81,17 @@
 src/main/java/com/example/firstmob
 ├── Firstmob.java                   # 入口：注册 + 创造页签
 ├── entity
-│   ├── YaoYongshouEntity.java      # 羊驼行为、目标过滤、吐口水弹道
+│   ├── YaoYongshouEntity.java      # 羊驼行为、目标过滤、吐口水弹道、听觉索敌
 │   └── YaoYongshouSpitEntity.java  # 口水弹体：伤害 / 击退 / 同类免伤
+├── mixin
+│   └── PlayerSoundMixin.java       # 监听玩家音效，转给听觉系统
 └── registry
     ├── ModEntities.java            # 实体类型 + 属性
     └── ModItems.java               # 刷怪蛋
 
 src/main/resources
 ├── fabric.mod.json                 # 模组元数据
+├── firstmob.mixins.json            # mixin 配置（玩家音效监听）
 ├── assets/firstmob/                # 贴图、模型、语言文件
 └── data/firstmob/damage_type/      # 自定义伤害类型
 
