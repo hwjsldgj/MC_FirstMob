@@ -10,6 +10,8 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.entity.ai.goal.PrioritizedGoal;
+import net.minecraft.entity.ai.goal.ProjectileAttackGoal;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.passive.LlamaEntity;
@@ -40,6 +42,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int GUARANTEE_TIMEOUT_TICKS = 100;
 	/** 停火后，纯脚步声要等这么久才能再次触发（避免走两步就重新开打）。 */
 	private static final int STEP_RETRIGGER_COOLDOWN = 100;
+	/** 吐口水冷却：羊驼默认 40 tick，这里减 0.3 秒 = 34 tick。 */
+	private static final int SPIT_COOLDOWN_TICKS = 34;
+	/** 吐口水最大射程（格），与羊驼默认一致。 */
+	private static final double SPIT_RANGE = 20.0D;
 
 	/** 每个玩家的全部发声时间（含脚步），用于判断"吵不吵"。 */
 	private final Map<UUID, Deque<Long>> recentSounds = new HashMap<>();
@@ -216,6 +222,13 @@ public class YaoYongshouEntity extends LlamaEntity {
 	protected void initGoals() {
 		// 羊驼原生 AI：游泳/绑定/商队/吐口水(ProjectileAttackGoal)/逃跑/繁殖/诱惑/闲逛/注视
 		super.initGoals();
+		// 换掉羊驼默认的吐口水目标（间隔 40 tick），改成 34 tick：冷却缩短 0.3 秒
+		this.goalSelector.getGoals().stream()
+				.map(PrioritizedGoal::getGoal)
+				.filter(goal -> goal instanceof ProjectileAttackGoal)
+				.toList()
+				.forEach(this.goalSelector::remove);
+		this.goalSelector.add(3, new ProjectileAttackGoal(this, 1.25D, SPIT_COOLDOWN_TICKS, (float) SPIT_RANGE));
 		// 远程优先：羊驼的 ProjectileAttackGoal(优先级 3) 会自己"太远就走近、进入射程就停下吐口水"。
 		// 近战放到优先级 4，只在远程目标丢失/不可见时才补位，不会抢远程的优先级。
 		this.goalSelector.add(4, new CloseMeleeGoal(this, 1.2, true));
@@ -227,7 +240,16 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (target instanceof YaoYongshouEntity) {
 			return;
 		}
+		LivingEntity previous = this.getTarget();
 		super.setTarget(target);
+		if (target == null || target == previous || this.getWorld().isClient()) {
+			return;
+		}
+		// 第一次锁定的瞬间就先打一枪：看得见且在射程内就不等原版的开火倒计时
+		if (this.squaredDistanceTo(target) <= SPIT_RANGE * SPIT_RANGE
+				&& this.getVisibilityCache().canSee(target)) {
+			this.shootAt(target, 1.0F);
+		}
 	}
 
 	@Override
