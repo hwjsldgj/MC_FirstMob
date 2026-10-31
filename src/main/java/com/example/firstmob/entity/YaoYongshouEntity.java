@@ -34,10 +34,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final double MAX_CHASE_RANGE_SQUARED = MAX_CHASE_RANGE * MAX_CHASE_RANGE;
 	/** 计数窗口：只统计最近 5 秒（100 tick）内的声音。 */
 	private static final int SOUND_WINDOW_TICKS = 100;
-	/** 窗口内声音达到这个次数就主动开火（即"大于 2 次"）。 */
+	/** 窗口内声音达到这个次数就主动开火（最少 3 次）。 */
 	private static final int SOUND_THRESHOLD = 3;
-	/** 窗口内"非脚步"声音低于这个值就停火（即"小于 2 次"）。 */
-	private static final int RELEASE_SOUND_COUNT = 2;
+	/** 窗口内"非脚步"声音低于这个值就停火（同样以 3 次为准）。 */
+	private static final int RELEASE_SOUND_COUNT = 3;
 	/** "至少攻击一次"的保证：和计数窗口一样只给 5 秒，安静下来就不再死追。 */
 	private static final int GUARANTEE_TIMEOUT_TICKS = 100;
 	/** 停火后，纯脚步声要等这么久才能再次触发（避免走两步就重新开打）。 */
