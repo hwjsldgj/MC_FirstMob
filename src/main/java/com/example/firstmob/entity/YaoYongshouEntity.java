@@ -90,6 +90,11 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int REVENGE_TIMEOUT_TICKS = 100;
 	/** 近战接管距离（3 格）：这个距离内只准近战，远程（口水/声波）一律禁用。 */
 	private static final double MELEE_RANGE_SQUARED = 9.0D;
+	/** 锁定模式的近战距离（5 格）：比普通模式更早贴脸，5 格内不再吐口水。 */
+	private static final double LOCK_MELEE_RANGE_SQUARED = 25.0D;
+	/** 锁定追击：距离 >40 格加速度 II，回到 20 格内解除（中间区间保持现状，避免临界抖动）。 */
+	private static final double SPEED_BOOST_START_SQUARED = 40.0D * 40.0D;
+	private static final double SPEED_BOOST_END_SQUARED = 20.0D * 20.0D;
 
 	/** 5 秒内声音"超过 8 次"（即 ≥9 次）就升级成监守者声波。 */
 	private static final int SONIC_SOUND_THRESHOLD = 9;
@@ -165,6 +170,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private int lockSonicTicks;
 	/** 下一次允许吐口水的世界时间：两种模式共用一套冷却，<20% 血时按 80% 计算。 */
 	private long nextSpitTick;
+	/** 是否正挂着"追击加速"（速度 II）；解除时要换回 Boss 形态自带的永久速度 I。 */
+	private boolean speedBoosted;
 	/** Boss 血条：标题取实体显示名，进度跟随当前血量，只发给正在追踪本实体的玩家。 */
 	private final ServerBossBar bossBar = new ServerBossBar(this.getDisplayName(), BossBar.Color.RED,
 			BossBar.Style.PROGRESS);
@@ -265,11 +272,12 @@ public class YaoYongshouEntity extends LlamaEntity {
 		debug("LOCK enter hp={}", this.getHealth());
 	}
 
-	/** 解除锁定：目标与节拍全部清空，之后重新由声音/受击触发。 */
+	/** 解除锁定：目标与节拍全部清空，加速退回 Boss 形态的永久速度 I。 */
 	private void exitLockMode() {
 		this.lockMode = false;
 		this.lockTarget = null;
 		this.lockSonicTicks = 0;
+		this.clearSpeedBoost();
 		debug("LOCK exit hp={}", this.getHealth());
 		this.setTarget(null);
 	}
@@ -296,13 +304,44 @@ public class YaoYongshouEntity extends LlamaEntity {
 			// 换目标：setTarget 在 ≤20 格时会立刻补一枪
 			this.setTarget(target);
 		}
-		if (this.squaredDistanceTo(target) > SPIT_RANGE * SPIT_RANGE) {
+		double distanceSquared = this.squaredDistanceTo(target);
+		this.updateChaseSpeed(distanceSquared);
+		if (distanceSquared > SPIT_RANGE * SPIT_RANGE) {
 			this.updateLockSonic(target);
 		} else {
 			// 20 格内交给口水；回到近处要把声波节拍清零，下次出圈重新蓄力
 			this.lockSonicTicks = 0;
 			this.shootAt(target, 1.0F);
 		}
+	}
+
+	/** 追击移速：>40 格上速度 II，<20 格退回速度 I；中间区间保持现状，避免阈值抖动。 */
+	private void updateChaseSpeed(double distanceSquared) {
+		if (!this.speedBoosted && distanceSquared > SPEED_BOOST_START_SQUARED) {
+			this.speedBoosted = true;
+			this.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, StatusEffectInstance.INFINITE, 1,
+					false, false, true));
+		} else if (this.speedBoosted && distanceSquared < SPEED_BOOST_END_SQUARED) {
+			this.clearSpeedBoost();
+		}
+	}
+
+	/** 去掉速度 II 并补回 Boss 形态的永久速度 I（BossForm 时才有）。 */
+	private void clearSpeedBoost() {
+		if (!this.speedBoosted) {
+			return;
+		}
+		this.speedBoosted = false;
+		this.removeStatusEffect(StatusEffects.SPEED);
+		if (this.bossForm) {
+			this.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, StatusEffectInstance.INFINITE, 0,
+					false, false, true));
+		}
+	}
+
+	/** 当前近战接管距离：锁定模式 5 格（更早贴脸），其余模式 3 格。 */
+	private double meleeRangeSquared() {
+		return this.lockMode ? LOCK_MELEE_RANGE_SQUARED : MELEE_RANGE_SQUARED;
 	}
 
 	/** 目标解析：先找最近一次打它的玩家，找不到再找最近的存活玩家（不限距离）。 */
@@ -386,6 +425,12 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (this.bossForm && !this.getWorld().isClient()) {
 			// 属性基值随 Attributes 存档；永久增益属于状态，读档时补回来
 			this.applyBossBuffs();
+			// 追击加速（速度 II）不进锁定状态：读档后先收掉，等锁定逻辑重新判定
+			StatusEffectInstance speed = this.getStatusEffect(StatusEffects.SPEED);
+			if (speed != null && speed.getAmplifier() > 0) {
+				this.removeStatusEffect(StatusEffects.SPEED);
+				this.applyBossBuffs();
+			}
 		}
 	}
 
@@ -713,7 +758,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.faceTarget(player);
 		this.sonicTicks++;
 		// 贴身时只准近战：声波蓄满也不放，等目标拉开距离再打
-		if (this.sonicTicks == this.sonicChargeTicks() && this.squaredDistanceTo(player) > MELEE_RANGE_SQUARED) {
+		if (this.sonicTicks == this.sonicChargeTicks() && this.squaredDistanceTo(player) > this.meleeRangeSquared()) {
 			this.fireSonicBoom(player);
 		}
 		if (this.sonicTicks >= this.sonicIntervalTicks()) {
@@ -909,8 +954,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (world.isClient() || this.sonicMode) {
 			return;
 		}
-		// 近距离只准近战：3 格内不吐口水，拉开距离后才恢复远程
-		if (this.squaredDistanceTo(target) <= MELEE_RANGE_SQUARED) {
+		// 近距离只准近战：普通模式 3 格、锁定模式 5 格，拉不开距离就不吐口水
+		if (this.squaredDistanceTo(target) <= this.meleeRangeSquared()) {
 			return;
 		}
 		// 冷却统一在这里判：<20% 血时缩短 20%，锁定模式与普通模式共用同一套
@@ -980,7 +1025,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		return hit;
 	}
 
-	/** 只在贴身距离才触发的近战：优先级 2，但进出都由距离把关，不会压制远程吐口水。 */
+	/** 只在贴身距离才触发的近战：优先级 2，进出都由距离把关，不会压制远程吐口水。 */
 	private static class CloseMeleeGoal extends MeleeAttackGoal {
 		CloseMeleeGoal(PathAwareEntity mob, double speed, boolean pauseWhenMobIdle) {
 			super(mob, speed, pauseWhenMobIdle);
@@ -988,12 +1033,13 @@ public class YaoYongshouEntity extends LlamaEntity {
 
 		private boolean targetInMeleeRange() {
 			LivingEntity target = this.mob.getTarget();
-			return target != null && this.mob.squaredDistanceTo(target) <= MELEE_RANGE_SQUARED;
+			// 锁定模式用 5 格，普通模式仍是 3 格
+			return target != null && this.mob.squaredDistanceTo(target) <= ((YaoYongshouEntity) this.mob).meleeRangeSquared();
 		}
 
 		@Override
 		public boolean canStart() {
-			// 3 格内才接管，避免在远处就跟远程抢控制权
+			// 进距离才接管，避免在远处就跟远程抢控制权
 			return this.targetInMeleeRange() && super.canStart();
 		}
 
