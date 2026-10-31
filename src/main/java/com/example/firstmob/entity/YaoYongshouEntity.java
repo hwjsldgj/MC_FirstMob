@@ -149,14 +149,23 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private void hearSoundFrom(PlayerEntity player, boolean loud, boolean step) {
 		UUID uuid = player.getUuid();
 		long now = this.getWorld().getTime();
-		// 同一次发声可能在同一 tick 触发好几条音效（比如被口水打中：受伤音效 + 其它），
-		// 同一 tick、同一类只记 1 次，避免一次事件被算成好几次
-		Map<UUID, Long> lastTicks = step ? this.lastStepTicks : (loud ? this.lastLoudTicks : this.lastHitTicks);
-		Long last = lastTicks.get(uuid);
-		if (last != null && last.longValue() == now) {
-			return;
+		// 脚步声在同一个统计窗口（5 秒）里只算 1 次，走多久都不会把计数刷上去
+		if (step) {
+			Long lastStep = this.lastStepTicks.get(uuid);
+			if (lastStep != null && now - lastStep < SOUND_WINDOW_TICKS) {
+				return;
+			}
+			this.lastStepTicks.put(uuid, now);
+		} else {
+			// 同一次发声可能在同一 tick 触发好几条音效（比如被口水打中：受伤音效 + 其它），
+			// 同一 tick、同一类只记 1 次，避免一次事件被算成好几次
+			Map<UUID, Long> lastTicks = loud ? this.lastLoudTicks : this.lastHitTicks;
+			Long last = lastTicks.get(uuid);
+			if (last != null && last.longValue() == now) {
+				return;
+			}
+			lastTicks.put(uuid, now);
 		}
-		lastTicks.put(uuid, now);
 
 		record(this.recentSounds, uuid, now);
 		if (loud) {
