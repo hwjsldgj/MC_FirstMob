@@ -1,4 +1,31 @@
 {
+  "entity.yao_yongshou.ambient": {
+    "subtitle": "subtitles.firstmob.entity.yao_yongshou.ambient",
+    "sounds": [
+      {
+        "name": "minecraft:entity.llama.ambient",
+        "type": "event"
+      }
+    ]
+  },
+  "entity.yao_yongshou.hurt": {
+    "subtitle": "subtitles.firstmob.entity.yao_yongshou.hurt",
+    "sounds": [
+      {
+        "name": "minecraft:entity.llama.hurt",
+        "type": "event"
+      }
+    ]
+  },
+  "entity.yao_yongshou.death": {
+    "subtitle": "subtitles.firstmob.entity.yao_yongshou.death",
+    "sounds": [
+      {
+        "name": "minecraft:entity.llama.death",
+        "type": "event"
+      }
+    ]
+  },
   "entity.yao_yongshou.spit": {
     "subtitle": "subtitles.firstmob.entity.yao_yongshou.spit",
     "sounds": [

@@ -6,16 +6,18 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import com.example.firstmob.registry.ModSounds;
+
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.ai.goal.LookAroundGoal;
 import net.minecraft.entity.ai.goal.LookAtEntityGoal;
 import net.minecraft.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.entity.ai.goal.ProjectileAttackGoal;
 import net.minecraft.entity.ai.goal.SwimGoal;
 import net.minecraft.entity.ai.goal.WanderAroundFarGoal;
+import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.passive.AnimalEntity;
@@ -119,6 +121,25 @@ public class YaoYongshouEntity extends LlamaEntity {
 
 	public YaoYongshouEntity(EntityType<? extends LlamaEntity> entityType, World world) {
 		super(entityType, world);
+	}
+
+	// ------------------------------------------------------------------
+	// 音效：换成姚永寿自己的字幕（声音文件仍复用原版羊驼/监守者）
+	// ------------------------------------------------------------------
+
+	@Override
+	protected SoundEvent getAmbientSound() {
+		return ModSounds.YAO_AMBIENT;
+	}
+
+	@Override
+	protected SoundEvent getHurtSound(DamageSource source) {
+		return ModSounds.YAO_HURT;
+	}
+
+	@Override
+	protected SoundEvent getDeathSound() {
+		return ModSounds.YAO_DEATH;
 	}
 
 	/**
@@ -362,7 +383,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.setTarget(player);
 		}
 		if (this.sonicTicks == 0) {
-			this.playSound(com.example.firstmob.registry.ModSounds.SONIC_CHARGE, 3.0F, 1.0F);
+			this.playSound(ModSounds.SONIC_CHARGE, 3.0F, 1.0F);
 		}
 		this.faceTarget(player);
 		this.sonicTicks++;
@@ -392,7 +413,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 						1, 0.0D, 0.0D, 0.0D, 0.0D);
 			}
 		}
-		this.playSound(com.example.firstmob.registry.ModSounds.SONIC_BOOM, 3.0F, 1.0F);
+		this.playSound(ModSounds.SONIC_BOOM, 3.0F, 1.0F);
 		if (target.damage(world.getDamageSources().sonicBoom(this), SONIC_DAMAGE)) {
 			double resistance = 1.0D - target.getAttributeValue(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE);
 			double horizontal = 2.5D * resistance;
@@ -576,7 +597,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		spit.setVelocity(dx, aimY - spit.getY() + drop, dz, speed, 0.4F);
 
 		world.playSound(null, this.getX(), this.getY(), this.getZ(),
-				com.example.firstmob.registry.ModSounds.YAO_SPIT, net.minecraft.sound.SoundCategory.NEUTRAL, 1.0F, 1.0F);
+				ModSounds.YAO_SPIT, net.minecraft.sound.SoundCategory.NEUTRAL, 1.0F, 1.0F);
 		world.spawnEntity(spit);
 
 		// 本轮"至少攻击一次"已兑现

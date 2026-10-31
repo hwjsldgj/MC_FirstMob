@@ -62,7 +62,7 @@
 
 ### 字幕与死亡信息
 
-- 吐口水、声波蓄力、声波释放各自注册了 `firstmob:entity.yao_yongshou.*` 音效事件（声音文件复用原版羊驼/监守者），字幕显示「姚永寿：吐口水 / 姚永寿：蓄力 / 姚永寿：音波尖啸」
+- 吐口水、蓄力、音波、环境音、受伤、死亡都换成 `firstmob:entity.yao_yongshou.*` 音效事件（声音文件复用原版羊驼/监守者），字幕统一显示「姚永寿：吼叫 / 受伤 / 死亡 / 吐口水 / 蓄力 / 音波尖啸」
 - 口水击杀的死亡信息：`death.attack.yao_spit` →「XX 被 YY 的口水淹死了」
 
 ### 刷怪蛋 `firstmob:yao_yongshou_spawn_egg`

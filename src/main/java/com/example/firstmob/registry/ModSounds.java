@@ -12,6 +12,9 @@ import net.minecraft.util.Identifier;
  * 但字幕换成"姚永寿：xxx"，不再显示"羊驼""监守者"。
  */
 public final class ModSounds {
+	public static final SoundEvent YAO_AMBIENT = register("entity.yao_yongshou.ambient");
+	public static final SoundEvent YAO_HURT = register("entity.yao_yongshou.hurt");
+	public static final SoundEvent YAO_DEATH = register("entity.yao_yongshou.death");
 	public static final SoundEvent YAO_SPIT = register("entity.yao_yongshou.spit");
 	public static final SoundEvent SONIC_CHARGE = register("entity.yao_yongshou.sonic_charge");
 	public static final SoundEvent SONIC_BOOM = register("entity.yao_yongshou.sonic_boom");
