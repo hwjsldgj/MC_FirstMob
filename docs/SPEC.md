@@ -119,7 +119,7 @@
 | 距离 | 行为 |
 | --- | --- |
 | ≤ 20 格 | 每 tick `lookAt` 玩家（头部一直盯着看；`LookAtEntityGoal` 只有 8 格，覆盖不到这么远） |
-| 16~20 格 | 不干预寻路，交给 `WanderAroundFarGoal` 自己游走 |
+| 16~20 格 | **站定不动**，只盯着玩家（`IdleWanderGoal` 会拦掉原版游走） |
 | > 20 格 | `navigation.startMovingTo(player, 1.0)` 靠近，直到回到 20 格内 |
 | < 16 格 | 沿"玩家 → 自己"方向后退到 16 格以外（玩家主动贴上来也不会被贴脸） |
 | > 36 格 | 传送一次：方向相对玩家朝向随机偏 **35°~145°**（左右随机，永远避开正前方），半径随机 **18~22 格**（约 20 格）；最多试 6 次 |
@@ -190,7 +190,7 @@
 | 0 | `SwimGoal` | — | 浮水 |
 | 2 | `CloseMeleeGoal`（`MeleeAttackGoal` 子类） | 速度 1.2，`pauseWhenMobIdle = true` | 3 格内近战 |
 | 3 | `ProjectileAttackGoal` | 速度 1.25，间隔 34 tick，射程 20 | 走近并吐口水 |
-| 6 | `WanderAroundFarGoal` | 速度 1.0 | 游荡 |
+| 6 | `IdleWanderGoal`（`WanderAroundFarGoal` 子类） | 速度 1.0 | 游荡；玩家在 16~20 格的"合适距离"内时 `canStart` / `shouldContinue` 都返回 false，站定只看人 |
 | 7 | `LookAtEntityGoal` | 玩家，8 格 | 看人 |
 | 8 | `LookAroundGoal` | — | 随机张望 |
 

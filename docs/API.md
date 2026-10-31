@@ -93,7 +93,8 @@ public class Firstmob implements ModInitializer {
 | 攻击动画 | `public float getAttackAnimationProgress()`；`tryAttack` 命中时把 `ATTACK_ANIM` 设为 10，每 tick 递减 | 0 = 待机，0~1 = 挥击进度；数据同步（`TrackedData<Integer>`），客户端模型据此播放抡臂 |
 | `shootAt` 冷却 | 内部字段 `nextSpitTick` | `shootAt` 自行限流：基础 34 tick，`<20%` 血时 27 tick；锁定模式与 `ProjectileAttackGoal` 共用 |
 | `updateLockMode`（私有） | 每 tick 一次 | `<60%` 血时接管目标与攻击：优先打它的玩家，其次最近玩家；<5 格近战、5~20 格口水、20~40 格声波；>40 格只追不打 |
-| `updateIdleFollow`（私有） | 每 tick 一次（仅 `IDLE`） | 20 格内 `lookAt`、>20 格靠近、<16 格后退、>36 格调用 `tryTeleport` |
+| `updateIdleFollow`（私有） | 每 tick 一次（仅 `IDLE`） | 20 格内 `lookAt`、>20 格靠近、16~20 格站定不动、<16 格后退、>36 格调用 `tryTeleport` |
+| `IdleWanderGoal`（私有内部类） | `WanderAroundFarGoal` 子类 | 玩家在 16~20 格内时 `canStart` / `shouldContinue` 返回 false，保证"合适距离内只站着看人" |
 | `updateMovementSpeed` / `setSpeedLevel`（私有） | 每 tick 一次 | 游走速度 III（amplifier 2）、战斗追击速度 II、其余按 Boss 形态速度 I 或普通形态无加速 |
 | `teleportNearPlayer`（私有） | 每次最多 6 个随机落点 | 相对玩家朝向随机偏 35°~145°（左右随机、**不含正前方**）、半径 18~22 格，落点要求 3×3×4 空地 |
 | `teleportFarFromPlayer`（私有） | 玩家周围无落点时的退路 | 任意方向 48~64 格；之后 `TELEPORT_RETRY_TICKS`（100 tick = 5 秒）再试 |
