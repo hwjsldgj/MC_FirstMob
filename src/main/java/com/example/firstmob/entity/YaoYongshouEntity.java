@@ -63,14 +63,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int SPIT_COOLDOWN_TICKS = 34;
 	/** 吐口水最大射程（格），与羊驼默认一致。 */
 	private static final double SPIT_RANGE = 20.0D;
-	/** 调试开关：临时打开，把声音计数和索敌状态写进日志。 */
-	private static final boolean DEBUG = true;
-
-	private static void debug(String message, Object... args) {
-		if (DEBUG) {
-			com.example.firstmob.Firstmob.LOGGER.info("[Yao] " + message, args);
-		}
-	}
 	/** 挨打后的反击上限：每次被打最多还手 3 次，打完就收手。 */
 	private static final int REVENGE_SHOT_LIMIT = 3;
 	/** 近战接管距离（3 格）：这个距离内只准近战，远程（口水/声波）一律禁用。 */
@@ -182,9 +174,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (loud) {
 			record(this.recentLoudSounds, uuid, now);
 		}
-		debug("sound kind={} other={} total={}", kind,
-				countInWindow(this.recentLoudSounds, uuid, now),
-				countInWindow(this.recentSounds, uuid, now));
 		// 5 秒内"非脚步"声音超过 8 次：升级成声波模式，优先于吐口水
 		if (!this.sonicMode && countInWindow(this.recentLoudSounds, uuid, now) >= SONIC_SOUND_THRESHOLD) {
 			this.enterSonicMode(player, now);
@@ -205,7 +194,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.noiseTarget = uuid;
 		this.guaranteedShots = 1;
 		this.noiseTriggerTime = now;
-		debug("TRIGGER uuid={} other={}", uuid, countInWindow(this.recentLoudSounds, uuid, now));
 		// 声音触发的战斗不算"挨打反击"，别被反击计数提前收手
 		this.revengeMode = false;
 		this.revengeShots = 0;
@@ -253,6 +241,15 @@ public class YaoYongshouEntity extends LlamaEntity {
 			return;
 		}
 		long now = world.getTime();
+		// 目标死亡/被移除就立刻收手，别对着尸体重启战斗
+		LivingEntity currentTarget = this.getTarget();
+		if (currentTarget != null && !currentTarget.isAlive()) {
+			this.setTarget(null);
+			this.noiseTarget = null;
+			this.guaranteedShots = 0;
+			this.revengeMode = false;
+			this.revengeShots = 0;
+		}
 		if (this.sonicMode) {
 			this.updateSonicMode(now);
 		} else {
@@ -265,11 +262,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 			}
 		}
 		this.updateNoiseAggro(now);
-		if (this.getTarget() != null && now % 20L == 0L) {
-			debug("state tgt={} noise={} guar={} rev={}/{} sonic={} other={}", this.getTarget(),
-					this.noiseTarget, this.guaranteedShots, this.revengeMode, this.revengeShots, this.sonicMode,
-					this.noiseTarget == null ? -1 : countInWindow(this.recentLoudSounds, this.noiseTarget, now));
-		}
 		if (now % 100L == 0L) {
 			pruneOutdated(this.recentSounds, now);
 			pruneOutdated(this.recentLoudSounds, now);
@@ -296,8 +288,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 		}
 		// 判断"吵不吵"只看真噪音：走路/跳跃/受击都不维持仇恨
 		if (!guaranteed && countInWindow(this.recentLoudSounds, this.noiseTarget, now) < RELEASE_SOUND_COUNT) {
-			debug("RELEASE uuid={} other={}", this.noiseTarget,
-					countInWindow(this.recentLoudSounds, this.noiseTarget, now));
 			this.setTarget(null);
 			this.noiseTarget = null;
 		}
@@ -316,7 +306,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.guaranteedShots = 0;
 		this.revengeMode = false;
 		this.revengeShots = 0;
-		debug("SONIC enter uuid={} other={}", player.getUuid(), countInWindow(this.recentLoudSounds, player.getUuid(), now));
 		// 这里会立即转向；shootAt 在声波模式下直接返回，不会顺手吐口水
 		this.setTarget(player);
 	}
@@ -330,7 +319,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 		}
 		this.sonicMode = false;
 		this.sonicTicks = 0;
-		debug("SONIC exit uuid={}", this.noiseTarget);
 		this.setTarget(null);
 		this.noiseTarget = null;
 		this.guaranteedShots = 0;
@@ -483,9 +471,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 		}
 		LivingEntity previous = this.getTarget();
 		super.setTarget(target);
-		if (previous != target) {
-			debug("target {} -> {}", previous, target);
-		}
 		if (target == null || target == previous || this.getWorld().isClient()) {
 			return;
 		}
@@ -500,7 +485,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 	public boolean damage(DamageSource source, float amount) {
 		boolean damaged = super.damage(source, amount);
 		if (damaged) {
-			debug("DAMAGE by {}", source.getAttacker());
 			// 被谁打就锁定谁（创造模式玩家也照样反击）；同类造成的伤害不还手
 			Entity attacker = source.getAttacker();
 			if (attacker instanceof LivingEntity living && living != this && !(living instanceof YaoYongshouEntity)) {
@@ -543,8 +527,6 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (this.squaredDistanceTo(target) <= MELEE_RANGE_SQUARED) {
 			return;
 		}
-		debug("SHOOT dist={} guar={} rev={}/{}", (int) Math.sqrt(this.squaredDistanceTo(target)),
-				this.guaranteedShots, this.revengeMode, this.revengeShots);
 		double dx = target.getX() - this.getX();
 		double dz = target.getZ() - this.getZ();
 		double horizontal = Math.sqrt(dx * dx + dz * dz);
