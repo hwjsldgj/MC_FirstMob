@@ -134,7 +134,8 @@ Boss 血条是实例字段 `private final ServerBossBar bossBar`（红色 `PROGR
 | 类 | 说明 |
 | --- | --- |
 | `FirstmobClient` | `onInitializeClient()` 中注册 `YaoYongshouRenderer` |
-| `YaoYongshouRenderer` | `MobEntityRenderer<YaoYongshouEntity, VillagerResemblingModel<YaoYongshouEntity>>`，阴影 0.5，贴图 `minecraft:textures/entity/villager/villager.png`，模型层 `EntityModelLayers.VILLAGER` |
+| `YaoYongshouRenderer` | `MobEntityRenderer<YaoYongshouEntity, YaoYongshouModel>`，阴影 0.5，贴图 `minecraft:textures/entity/zombie/zombie.png`，模型层 `EntityModelLayers.ZOMBIE` |
+| `YaoYongshouModel` | `BipedEntityModel<YaoYongshouEntity>`；`setAngles` 里调用 `CrossbowPosing.meleeAttack(leftArm, rightArm, false, handSwingProgress, animationProgress)`，得到僵尸的双臂前伸与挥击动画 |
 
 渲染器只影响观感，删除/替换不影响服务端逻辑；但客户端必须能解析该实体类型，否则会回退为默认渲染。
 
@@ -242,7 +243,7 @@ Loom 1.15 在 `remapJar` 阶段会把方法名重映射为 intermediary，**不�
 - 当前做法：无 `parent`，内联 `display` 与 `gui_light`，单个元素 `from [0,0,7.5] to [16,16,7.5]`，`north`/`south` 两个面共用同一 UV，最终 **2 个共面 quad**。
 - 贴图路径 `firstmob:item/yao_yongshou_spawn_egg`，源图见 `素材/yao_yongshou.png`。
 
-实体渲染贴图直接引用原版村民贴图，不占用本模组资源。
+实体渲染贴图直接引用原版僵尸贴图，不占用本模组资源。
 
 ## 6. 稳定度与兼容性
 

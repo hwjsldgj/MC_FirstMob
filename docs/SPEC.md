@@ -22,7 +22,8 @@
 | --- | --- |
 | 实体 ID | `firstmob:yao_yongshou` |
 | Java 基类 | `LlamaEntity`（只沿用普通寻路 + 吐口水） |
-| 外形 | 村民 `VillagerResemblingModel` + `minecraft:textures/entity/villager/villager.png`，不继承村民实体 |
+| 外形 | 僵尸 `BipedEntityModel`（`EntityModelLayers.ZOMBIE`）+ `minecraft:textures/entity/zombie/zombie.png`；待机双臂前伸、近战挥击都复用原版 `CrossbowPosing#meleeAttack` |
+| 渲染与实体分离 | 外形不继承任何原版生物实体；模型只影响观感 |
 | 碰撞箱 | 宽 0.6 × 高 1.95，眼高 1.62（`EntityType` 基础值；`GENERIC_SCALE = 2` 后实际 1.2 × 3.9） |
 | 生成组 | `SpawnGroup.MISC` |
 | 追踪范围 | 10（`EntityType.Builder#maxTrackingRange`） |
@@ -356,5 +357,5 @@
 - 创造模式玩家免疫伤害：口水只击退；声波连击退也不结算，只剩粒子与音效。
 - 声波沿用 `minecraft:sonic_boom`（`scaling: always`），和平难度伤害归零。
 - 方块声音按「挖/交互动作」计数，不按真实音效事件；交互失败、开箱子等也会计一次。
-- 只保留村民外观，交易、职业、脑 AI 一概不继承。
+- 只保留僵尸外观，交易、职业、脑 AI 一概不继承。
 - 听觉只统计玩家，怪物或环境音效不会吸引姚永寿。

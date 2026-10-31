@@ -4,6 +4,7 @@
 
 ### 新增
 
+- 外形改为僵尸：`BipedEntityModel` + `EntityModelLayers.ZOMBIE` + 原版僵尸贴图，待机双臂前伸、近战挥击复用原版 `CrossbowPosing#meleeAttack`（铁傀儡模型泛型绑死在 `IronGolemEntity`，无法直接复用）
 - 姚永寿改为分阶段 Boss：
   - 生成时为普通形态：100 血、护甲 0、体型 1 倍、不显示血条
   - 血量掉到 80% 以下转 Boss 形态（单向）：体型 2 倍、护甲 20、屏幕顶部红色 Boss 血条，并获得永久速度 I、力量 I

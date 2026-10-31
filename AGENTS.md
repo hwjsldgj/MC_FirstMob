@@ -6,7 +6,7 @@
 
 Minecraft **1.21.1 Fabric** 模组，新增生物「姚永寿」（`firstmob:yao_yongshou`）与刷怪蛋。
 
-- 外形用村民模型（`VillagerResemblingModel` + 原版贴图），但不继承村民实体
+- 外形用僵尸模型（`BipedEntityModel` + `EntityModelLayers.ZOMBIE` + 原版僵尸贴图），手臂姿势复用 `CrossbowPosing#meleeAttack`；不继承任何原版生物实体
 - 行为 `extends LlamaEntity`，只沿用普通寻路 + 吐口水；商队、骑乘、繁殖、诱惑、跟随父母全部移除
 - 没有幼年形态，不能繁殖 / 喂食 / 驯服
 - 口水是自定义弹体 `YaoYongshouSpitEntity`，4 点伤害 + 击退，伤害类型 `firstmob:yao_spit`
@@ -51,7 +51,8 @@ src/main/java/com/example/firstmob
     └── ModSounds.java              # 自定义音效事件（转发原版声音，换字幕）
 src/client/java/com/example/firstmob/client
 ├── FirstmobClient.java             # 客户端入口（只注册渲染器）
-└── YaoYongshouRenderer.java        # 村民模型渲染器
+├── YaoYongshouModel.java           # 僵尸骨架 + 僵尸手臂动画
+└── YaoYongshouRenderer.java        # 僵尸模型渲染器
 docs/                               # SPEC / API / 文档索引
 ```
 
@@ -84,7 +85,7 @@ docs/                               # SPEC / API / 文档索引
 1. **和平难度伤害**：`PlayerEntity.damage` 会把 `isScaledWithDifficulty()` 的伤害清零，所以口水用自定义伤害类型 `data/firstmob/damage_type/yao_spit.json`，`"scaling": "never"`。
 2. **击退方向**：`LivingEntity.takeKnockback(strength, x, z)` 内部会取反，要传「从目标指向攻击者」的向量。
 3. **属性缺失**：羊驼默认没有 `GENERIC_ATTACK_DAMAGE`，近战会崩；`ModEntities` 里补了 `attack_damage=4`、`attack_knockback=0.5`。
-4. **渲染取值**：模型层用 `context.getPart(EntityModelLayers.VILLAGER)`，不是 `bakeLayer`。
+4. **渲染取值**：模型层用 `context.getPart(EntityModelLayers.ZOMBIE)`（64×64 人形骨架），不是 `bakeLayer`；原版 `ZombieEntityModel` / `IronGolemEntityModel` 的泛型绑死在对应实体上，只能借骨架和 `CrossbowPosing`，不能直接实例化。
 5. **刷怪蛋模型**：不能写 `"parent": "item/generated"`——那会走 `builtin/generated`，按 alpha 生成 1/16 厚的挤压壳（154 个 quad），自定义 `elements` 被忽略，表现为重影/厚度。当前做法：无 parent，内联 `display`/`gui_light`，单个元素 `from [0,0,7.5] to [16,16,7.5]`，同时给 `north`/`south` 面，最终 2 个共面 quad。
 6. **mixin 配置**：Loom 1.15 在 `remapJar` 阶段把注解里的方法名重映射成 intermediary，**不需要 refmap**；手写 `"refmap"` 反而会因文件不存在报错。
 7. **近战抢目标**：`CloseMeleeGoal` 必须在 `canStart` 和 `shouldContinue` 里都卡 3 格；只卡 `canStart` 会让它一路追着目标跑、永远压住远程。
