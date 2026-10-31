@@ -68,8 +68,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final double SONIC_RANGE_SQUARED = SONIC_RANGE * SONIC_RANGE;
 	/** 原版监守者开炮前蓄力 34 tick。 */
 	private static final int SONIC_CHARGE_TICKS = 34;
-	/** 两发声波间隔 200 tick（10 秒），比原版监守者的 5 秒慢一倍。 */
-	private static final int SONIC_INTERVAL_TICKS = 200;
+	/** 两发声波间隔 160 tick（8 秒），比原版监守者的 5 秒慢。 */
+	private static final int SONIC_INTERVAL_TICKS = 160;
 	/** 原版声波伤害。 */
 	private static final float SONIC_DAMAGE = 10.0F;
 
@@ -291,7 +291,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.stepTriggerAllowedAt = now + STEP_RETRIGGER_COOLDOWN;
 	}
 
-	/** 声波模式下每 tick 走一遍：蓄力 34 tick → 开炮 → 冷却到 200 tick 再来。 */
+	/** 声波模式下每 tick 走一遍：蓄力 34 tick → 开炮 → 冷却到 160 tick 再来。 */
 	private void updateSonicMode(long now) {
 		// 直接按 UUID 找锁定目标：中途被别的怪抢仇恨也不会退出声波模式
 		PlayerEntity player = this.noiseTarget == null ? null : this.getWorld().getPlayerByUuid(this.noiseTarget);
@@ -362,10 +362,11 @@ public class YaoYongshouEntity extends LlamaEntity {
 		// 羊驼的商队、绑定/骑乘、繁殖、诱惑、跟随父母等一概不要，只留普通寻路 + 吐口水
 		this.goalSelector.clear(goal -> true);
 		this.goalSelector.add(0, new SwimGoal(this));
+		// 近战放优先级 2：只在 3 格内接管（canStart/shouldContinue 都卡距离），
+		// 被打时能贴脸还手；目标一退出去就立刻把控制权还给远程
+		this.goalSelector.add(2, new CloseMeleeGoal(this, 1.2, true));
 		// 远程：太远就走近，进入射程就停下吐口水
 		this.goalSelector.add(3, new ProjectileAttackGoal(this, 1.25D, SPIT_COOLDOWN_TICKS, (float) SPIT_RANGE));
-		// 近战放优先级 4，只在贴身时补位，不会抢远程的优先级
-		this.goalSelector.add(4, new CloseMeleeGoal(this, 1.2, true));
 		this.goalSelector.add(6, new WanderAroundFarGoal(this, 1.0D));
 		this.goalSelector.add(7, new LookAtEntityGoal(this, PlayerEntity.class, 8.0F));
 		this.goalSelector.add(8, new LookAroundGoal(this));
@@ -447,11 +448,26 @@ public class YaoYongshouEntity extends LlamaEntity {
 	@Override
 	public boolean damage(DamageSource source, float amount) {
 		boolean damaged = super.damage(source, amount);
-		// 声波模式期间不换目标：挨打也继续锁着原来那个人
-		if (damaged && !this.sonicMode) {
+		if (damaged) {
 			// 被谁打就锁定谁（创造模式玩家也照样反击）；同类造成的伤害不还手
 			Entity attacker = source.getAttacker();
 			if (attacker instanceof LivingEntity living && living != this && !(living instanceof YaoYongshouEntity)) {
+				if (this.sonicMode) {
+					if (living == this.getTarget()) {
+						// 打人的还是声波锁着的那位：保持锁定，近战由 CloseMeleeGoal 接管
+						return damaged;
+					}
+					if (living instanceof PlayerEntity player) {
+						// 换了个玩家贴脸打：声波跟着换目标，不中断
+						this.noiseTarget = player.getUuid();
+						this.sonicTicks = 0;
+						this.guaranteedShots = 0;
+						this.setTarget(living);
+						return damaged;
+					}
+					// 非玩家打进来：声波模式结束，回到普通反击
+					this.exitSonicMode(this.getWorld().getTime());
+				}
 				// 挨打引发的仇恨交给原版反击逻辑处理，不再受"安静就停火"的约束
 				this.noiseTarget = null;
 				this.guaranteedShots = 0;
@@ -509,19 +525,29 @@ public class YaoYongshouEntity extends LlamaEntity {
 		return hit;
 	}
 
-	/** 只在贴身距离才触发的近战，避免一直压制远程吐口水。 */
+	/** 只在贴身距离才触发的近战：优先级 2，但进出都由距离把关，不会压制远程吐口水。 */
 	private static class CloseMeleeGoal extends MeleeAttackGoal {
+		private static final double MELEE_RANGE_SQUARED = 9.0D;
+
 		CloseMeleeGoal(PathAwareEntity mob, double speed, boolean pauseWhenMobIdle) {
 			super(mob, speed, pauseWhenMobIdle);
 		}
 
+		private boolean targetInMeleeRange() {
+			LivingEntity target = this.mob.getTarget();
+			return target != null && this.mob.squaredDistanceTo(target) <= MELEE_RANGE_SQUARED;
+		}
+
 		@Override
 		public boolean canStart() {
-			LivingEntity target = this.mob.getTarget();
-			if (target == null || this.mob.squaredDistanceTo(target) > 9.0) {
-				return false;
-			}
-			return super.canStart();
+			// 3 格内才接管，避免在远处就跟远程抢控制权
+			return this.targetInMeleeRange() && super.canStart();
+		}
+
+		@Override
+		public boolean shouldContinue() {
+			// 目标一退出 3 格马上撒手，把控制权还给 ProjectileAttackGoal
+			return this.targetInMeleeRange() && super.shouldContinue();
 		}
 	}
 }

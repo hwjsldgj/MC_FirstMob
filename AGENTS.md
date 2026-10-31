@@ -68,7 +68,7 @@ src/client/java/com/example/firstmob/client
 
 - **触发**：同一玩家在 20 格内、5 秒窗口内声音 **≥9 次**（"超过 8 次"）→ `enterSonicMode`（脚步声也计入，冲刺容易达成）
 - **互斥**：`sonicMode` 为 true 时 `shootAt` 立刻返回，不吐口水；吐口水阶段攒够 9 次会升级
-- **节拍**：进入后蓄力 34 tick（`SONIC_CHARGE_TICKS`）开炮，之后每 200 tick（`SONIC_INTERVAL_TICKS`，10 秒）一次；每 tick `faceTarget`
+- **节拍**：进入后蓄力 34 tick（`SONIC_CHARGE_TICKS`）开炮，之后每 160 tick（`SONIC_INTERVAL_TICKS`，8 秒）一次；每 tick `faceTarget`
 - **停止条件**：只有目标**离开 40 格**（`SONIC_RANGE`）或**死亡**才 `exitSonicMode`；期间不看"安静停火"，也不走 25 格放弃
 - **解除后**：清掉该玩家的 `recentSounds` / `recentLoudSounds`，需要重新攒够 9 次
 - **实现**：1.21.1 没有独立的声波实体（原版是 `SonicBoomTask` 里直接结算），这里照抄同一套：沿射线 `ParticleTypes.SONIC_BOOM` 粒子 + `entity.warden.sonic_boom` 音效（音量 3）+ `damageSources.sonicBoom(this)` 10 点 + `addVelocity(dir * 2.5 * (1-击退抗性))`
@@ -77,9 +77,9 @@ src/client/java/com/example/firstmob/client
 
 - 远程：`ProjectileAttackGoal`，优先级 3，射程 20 格，**冷却 34 tick**（羊驼默认 40，减 0.3 秒）
 - 首发：`setTarget` 里若目标可见且在 20 格内，**立即** `shootAt` 一次，不等开火倒计时
-- 近战：`CloseMeleeGoal`，优先级 4，仅 3 格内补位
+- 近战：`CloseMeleeGoal`，优先级 2，**3 格内**接管（`canStart` 与 `shouldContinue` 都卡 3 格），被贴脸打会立刻还手，目标一退出就还给远程
 - 开火前把 `yaw`/`bodyYaw`/`headYaw`/`pitch` 全部转向目标
-- **声波模式期间不开火吐口水**：`shootAt` 首行判断 `sonicMode` 直接 return；`setTarget` 的首发也带同样判断
+- **声波模式期间不开火吐口水**：`shootAt` 首行判断 `sonicMode` 直接 return；`setTarget` 的首发也带同样判断；但**近战照常**，贴脸仍会揍人
 - 同类不互殴：`setTarget` 过滤 `YaoYongshouEntity`，口水命中同类也不结算伤害
 
 ## 踩过的坑（别改回去）
@@ -90,7 +90,7 @@ src/client/java/com/example/firstmob/client
 4. **渲染取值**：模型层用 `context.getPart(EntityModelLayers.VILLAGER)`，不是 `bakeLayer`。
 5. **刷怪蛋模型**：**不能**写 `"parent": "item/generated"`——那会走 `builtin/generated`，按 alpha 生成 1/16 厚的挤压壳（154 个 quad），自定义 `elements` 被忽略，表现为重影/厚度。当前做法：无 parent，内联 `display`/`gui_light`，单个元素 `from [0,0,7.5] to [16,16,7.5]`，同时给 `north`/`south` 面，最终 **2 个共面 quad**。
 6. **mixin 配置**：`firstmob.mixins.json` 被 `fabric.mod.json` 的 `mixins` 引用。Loom 1.15 会在 `remapJar` 阶段直接把注解里的方法名重映射成 intermediary（jar 里能看到 `method_5783`），**不需要 refmap**；手写 `"refmap"` 反而会因文件不存在报错。
-7. **目标被抢**：近战若放优先级 2 会压住远程；必须 ≥4。
+7. **目标被抢（近战优先级）**：近战放优先级 2 时**必须**在 `canStart` 和 `shouldContinue` 里都卡 3 格，否则它会一路追着目标跑、永远压住远程；只卡 `canStart` 不够，目标超出 3 格它仍会继续追。当前 `CloseMeleeGoal` 两处都卡了距离。
 8. **刷怪蛋生成幼体**：两条路径都要堵。①在方块上使用：`PassiveEntity#initialize` 在 `SpawnReason.SPAWN_EGG` 下直接 `setBreedingAge(-24000)`（绕过 `setBaby`），所以要覆盖 `isBaby`/`getBreedingAge`/`setBreedingAge`；②对着实体使用：`MobEntity.interact` 是 final，会走 `interactWithItem` → `SpawnEggItem#spawnBaby` → `createChild`，而 `LlamaEntity#createChild` 造出的是**原版小羊驼**，必须覆盖 `createChild` 返回 null。只改 `interactMob` 没用。
 
 ## 验证流程
