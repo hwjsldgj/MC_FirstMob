@@ -23,6 +23,9 @@ import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.boss.BossBar;
 import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.entity.damage.DamageSource;
+import net.minecraft.entity.data.DataTracker;
+import net.minecraft.entity.data.TrackedData;
+import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.mob.PathAwareEntity;
@@ -131,6 +134,11 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int LOCK_RELEASE_NO_DAMAGE_TICKS = 600;
 	/** 低于 20% 血时攻击冷却缩短 20%（34→27 tick、160→128 tick、蓄力 34→27）。 */
 	private static final double ATTACK_BOOST_COOLDOWN_FACTOR = 0.8D;
+	/** 近战挥击动画时长（10 tick = 0.5 秒）：僵尸式抬臂→抡下，由模型读取。 */
+	private static final int ATTACK_ANIM_TICKS = 10;
+	/** 剩余挥击 tick，同步给客户端；0 表示不在挥击。 */
+	private static final TrackedData<Integer> ATTACK_ANIM = DataTracker.registerData(YaoYongshouEntity.class,
+			TrackedDataHandlerRegistry.INTEGER);
 
 	/** 每个玩家的全部发声时间（含脚步），用于判断"吵不吵"。 */
 	private final Map<UUID, Deque<Long>> recentSounds = new HashMap<>();
@@ -180,6 +188,18 @@ public class YaoYongshouEntity extends LlamaEntity {
 		super(entityType, world);
 		// Boss 不随距离自然清除：刷怪蛋/指令生成后一直留在世界里，直到被打死
 		this.setPersistent();
+	}
+
+	@Override
+	protected void initDataTracker(DataTracker.Builder builder) {
+		super.initDataTracker(builder);
+		builder.add(ATTACK_ANIM, 0);
+	}
+
+	/** 挥击动画进度：0 = 待机，0~1 = 抬臂→抡下→回位；客户端模型据此播放僵尸式攻击。 */
+	public float getAttackAnimationProgress() {
+		int remaining = this.dataTracker.get(ATTACK_ANIM);
+		return remaining <= 0 ? 0.0F : 1.0F - (float) remaining / ATTACK_ANIM_TICKS;
 	}
 
 	// ------------------------------------------------------------------
@@ -640,6 +660,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		}
 		this.updateFormState();
 		this.updateBossBar();
+		this.tickAttackAnimation();
 		long now = world.getTime();
 		if (this.lockMode) {
 			// 锁定模式：安静停火、25 格放弃、反击超时这些脱战规则全部让位
@@ -1016,6 +1037,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	public boolean tryAttack(Entity target) {
 		boolean hit = super.tryAttack(target);
 		if (hit) {
+			// 命中才挥臂：原版僵尸的挥击由 MeleeAttackGoal 发包，这里改用数据同步自己计时，保证动画一定播
+			this.dataTracker.set(ATTACK_ANIM, ATTACK_ANIM_TICKS);
 			if (this.guaranteedShots > 0 && target instanceof PlayerEntity player
 					&& player.getUuid().equals(this.noiseTarget)) {
 				this.guaranteedShots--;
@@ -1023,6 +1046,14 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.countRevengeShot();
 		}
 		return hit;
+	}
+
+	/** 挥击动画计时：只负责递减，命中时由 {@link #tryAttack} 重置。 */
+	private void tickAttackAnimation() {
+		int remaining = this.dataTracker.get(ATTACK_ANIM);
+		if (remaining > 0) {
+			this.dataTracker.set(ATTACK_ANIM, remaining - 1);
+		}
 	}
 
 	/** 只在贴身距离才触发的近战：优先级 2，进出都由距离把关，不会压制远程吐口水。 */
