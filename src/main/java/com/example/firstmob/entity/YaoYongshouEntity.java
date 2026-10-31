@@ -68,8 +68,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final double SONIC_RANGE_SQUARED = SONIC_RANGE * SONIC_RANGE;
 	/** 原版监守者开炮前蓄力 34 tick。 */
 	private static final int SONIC_CHARGE_TICKS = 34;
-	/** 两发声波间隔 100 tick（原版 RUN_TIME 60 + 冷却 40），即 5 秒。 */
-	private static final int SONIC_INTERVAL_TICKS = 100;
+	/** 两发声波间隔 200 tick（10 秒），比原版监守者的 5 秒慢一倍。 */
+	private static final int SONIC_INTERVAL_TICKS = 200;
 	/** 原版声波伤害。 */
 	private static final float SONIC_DAMAGE = 10.0F;
 
@@ -291,7 +291,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.stepTriggerAllowedAt = now + STEP_RETRIGGER_COOLDOWN;
 	}
 
-	/** 声波模式下每 tick 走一遍：蓄力 34 tick → 开炮 → 冷却到 100 tick 再来。 */
+	/** 声波模式下每 tick 走一遍：蓄力 34 tick → 开炮 → 冷却到 200 tick 再来。 */
 	private void updateSonicMode(long now) {
 		// 直接按 UUID 找锁定目标：中途被别的怪抢仇恨也不会退出声波模式
 		PlayerEntity player = this.noiseTarget == null ? null : this.getWorld().getPlayerByUuid(this.noiseTarget);

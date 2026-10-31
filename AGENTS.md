@@ -68,7 +68,7 @@ src/client/java/com/example/firstmob/client
 
 - **触发**：同一玩家在 20 格内、5 秒窗口内声音 **≥9 次**（"超过 8 次"）→ `enterSonicMode`（脚步声也计入，冲刺容易达成）
 - **互斥**：`sonicMode` 为 true 时 `shootAt` 立刻返回，不吐口水；吐口水阶段攒够 9 次会升级
-- **节拍**：进入后蓄力 34 tick（`SONIC_CHARGE_TICKS`）开炮，之后每 100 tick（`SONIC_INTERVAL_TICKS`）一次；每 tick `faceTarget`
+- **节拍**：进入后蓄力 34 tick（`SONIC_CHARGE_TICKS`）开炮，之后每 200 tick（`SONIC_INTERVAL_TICKS`，10 秒）一次；每 tick `faceTarget`
 - **停止条件**：只有目标**离开 40 格**（`SONIC_RANGE`）或**死亡**才 `exitSonicMode`；期间不看"安静停火"，也不走 25 格放弃
 - **解除后**：清掉该玩家的 `recentSounds` / `recentLoudSounds`，需要重新攒够 9 次
 - **实现**：1.21.1 没有独立的声波实体（原版是 `SonicBoomTask` 里直接结算），这里照抄同一套：沿射线 `ParticleTypes.SONIC_BOOM` 粒子 + `entity.warden.sonic_boom` 音效（音量 3）+ `damageSources.sonicBoom(this)` 10 点 + `addVelocity(dir * 2.5 * (1-击退抗性))`
