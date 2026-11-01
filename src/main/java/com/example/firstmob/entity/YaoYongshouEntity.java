@@ -107,6 +107,12 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final double MELEE_RANGE_SQUARED = 9.0D;
 	/** 锁定模式的近战距离（5 格）：比普通模式更早贴脸，5 格内不再吐口水。 */
 	private static final double LOCK_MELEE_RANGE_SQUARED = 25.0D;
+	/** 锁定模式口水射程（16 格）：5~16 格吐口水，16 格以外改声波。 */
+	private static final double LOCK_SPIT_RANGE = 16.0D;
+	private static final double LOCK_SPIT_RANGE_SQUARED = LOCK_SPIT_RANGE * LOCK_SPIT_RANGE;
+	/** 锁定模式站桩声波射程（32 格）：17~32 格站定放，32 格以外边追边放。 */
+	private static final double LOCK_SONIC_RANGE = 32.0D;
+	private static final double LOCK_SONIC_RANGE_SQUARED = LOCK_SONIC_RANGE * LOCK_SONIC_RANGE;
 	/**
 	 * 近战伤害类型：data/firstmob/damage_type/yao_melee.json。
 	 * <p>`scaling: never` 是必须的——原版 `mob_attack` 在和平难度会被整段清零，
@@ -604,23 +610,39 @@ public class YaoYongshouEntity extends LlamaEntity {
 			return;
 		}
 		if (this.getTarget() != target) {
-			// 换目标：setTarget 在 ≤20 格时会立刻补一枪
+			// 换目标：setTarget 在 ≤16 格时会立刻补一枪
 			this.setTarget(target);
 		}
 		double distanceSquared = this.squaredDistanceTo(target);
-		if (distanceSquared <= SPIT_RANGE * SPIT_RANGE) {
-			// 20 格内：口水，按锁定自己的冷却发（普通模式由 ProjectileAttackGoal 管冷却）
+		// 走位先定：近战交给 CloseMeleeGoal，5~32 格站定，32 格以外追击
+		if (distanceSquared > this.meleeRangeSquared()) {
+			if (distanceSquared <= LOCK_SONIC_RANGE_SQUARED) {
+				this.getNavigation().stop();
+			} else {
+				this.getNavigation().startMovingTo(target, 1.0D);
+			}
+		}
+		// 声波蓄力一旦开始，先把这一发打完：期间不切近战/口水
+		if (this.isSonicCharging()) {
+			this.updateLockSonic(target);
+			return;
+		}
+		if (distanceSquared <= this.meleeRangeSquared()) {
+			// 5 格内只近战
+			this.lockSonicTicks = 0;
+		} else if (distanceSquared <= LOCK_SPIT_RANGE_SQUARED) {
+			// 5~16 格：站定吐口水
 			this.lockSonicTicks = 0;
 			if (now >= this.nextSpitTick) {
 				this.shootAt(target, 1.0F);
 				this.nextSpitTick = now + this.spitCooldownTicks();
 			}
+		} else if (distanceSquared <= SONIC_RANGE_SQUARED) {
+			// 17~40 格：声波；32 格以外边走边放
+			this.updateLockSonic(target);
 		} else {
+			// >40 格：只追不打
 			this.lockSonicTicks = 0;
-			// 20~40 格：声波；40 格以外只追不打，等目标进入射程
-			if (distanceSquared <= SONIC_RANGE_SQUARED) {
-				this.updateLockSonic(target);
-			}
 		}
 	}
 
@@ -864,7 +886,12 @@ public class YaoYongshouEntity extends LlamaEntity {
 		return true;
 	}
 
-	/** 距离 >20 格：蓄力后放声波，节拍与噪音声波一致（<20% 血时也缩短 20%）。 */
+	/** 锁定模式的声波蓄力已经开始但还没开炮：这段时间不切换近战/口水，先把这一发打完。 */
+	private boolean isSonicCharging() {
+		return this.lockMode && this.lockSonicTicks > 0 && this.lockSonicTicks < this.sonicChargeTicks();
+	}
+
+	/** 锁定模式 17~40 格：蓄力后放声波，节拍与噪音声波一致（<20% 血时也缩短 20%）。 */
 	private void updateLockSonic(PlayerEntity target) {
 		if (this.lockSonicTicks == 0) {
 			this.playSound(ModSounds.SONIC_CHARGE, 3.0F, 1.0F);
@@ -873,6 +900,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.lockSonicTicks++;
 		if (this.lockSonicTicks == this.sonicChargeTicks()) {
 			this.fireSonicBoom(target);
+			debug("LOCK sonic fire dist={}", (int) Math.sqrt(this.squaredDistanceTo(target)));
 		}
 		if (this.lockSonicTicks >= this.sonicIntervalTicks()) {
 			this.lockSonicTicks = 0;
@@ -1319,8 +1347,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 		// 近战放优先级 2：只在 3 格内接管（canStart/shouldContinue 都卡距离），
 		// 被打时能贴脸还手；目标一退出去就立刻把控制权还给远程
 		this.goalSelector.add(2, new CloseMeleeGoal(this, 1.2, true));
-		// 远程：太远就走近，进入射程就停下吐口水
-		this.goalSelector.add(3, new ProjectileAttackGoal(this, 1.25D, SPIT_COOLDOWN_TICKS, (float) SPIT_RANGE));
+		// 远程：太远就走近，进入射程就停下吐口水；锁定模式的走位/攻击由 updateLockMode 接管
+		this.goalSelector.add(3, new LockAwareProjectileAttackGoal(1.25D, SPIT_COOLDOWN_TICKS, (float) SPIT_RANGE));
 		this.goalSelector.add(6, new IdleWanderGoal(this, 1.0D));
 		this.goalSelector.add(7, new LookAtEntityGoal(this, PlayerEntity.class, 8.0F));
 		this.goalSelector.add(8, new LookAroundGoal(this));
@@ -1393,7 +1421,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 			return;
 		}
 		// 第一次锁定的瞬间就先打一枪：看得见且在射程内就不等原版的开火倒计时
-		if (this.squaredDistanceTo(target) <= SPIT_RANGE * SPIT_RANGE
+		double spitRange = this.lockMode ? LOCK_SPIT_RANGE : SPIT_RANGE;
+		if (!this.isSonicCharging() && this.squaredDistanceTo(target) <= spitRange * spitRange
 				&& this.getVisibilityCache().canSee(target)) {
 			this.shootAt(target, 1.0F);
 			// 记一次冷却，避免锁定模式下一 tick 又补一口
@@ -1564,16 +1593,39 @@ public class YaoYongshouEntity extends LlamaEntity {
 			return target != null && this.mob.squaredDistanceTo(target) <= ((YaoYongshouEntity) this.mob).meleeRangeSquared();
 		}
 
+		private boolean sonicCharging() {
+			return ((YaoYongshouEntity) this.mob).isSonicCharging();
+		}
+
 		@Override
 		public boolean canStart() {
-			// 进距离才接管，避免在远处就跟远程抢控制权
-			return this.targetInMeleeRange() && super.canStart();
+			// 声波蓄力中不抢控制权：先把这一发打完
+			return !this.sonicCharging() && this.targetInMeleeRange() && super.canStart();
 		}
 
 		@Override
 		public boolean shouldContinue() {
 			// 目标一退出 3 格马上撒手，把控制权还给 ProjectileAttackGoal
-			return this.targetInMeleeRange() && super.shouldContinue();
+			return !this.sonicCharging() && this.targetInMeleeRange() && super.shouldContinue();
+		}
+	}
+
+	/** 锁定模式由 updateLockMode 统一走位/攻击，原版远程 AI 只负责盯着目标，避免抢路和重复吐口水。 */
+	private final class LockAwareProjectileAttackGoal extends ProjectileAttackGoal {
+		LockAwareProjectileAttackGoal(double speed, int attackInterval, float range) {
+			super(YaoYongshouEntity.this, speed, attackInterval, range);
+		}
+
+		@Override
+		public void tick() {
+			if (!YaoYongshouEntity.this.lockMode) {
+				super.tick();
+				return;
+			}
+			LivingEntity target = YaoYongshouEntity.this.getTarget();
+			if (target != null) {
+				YaoYongshouEntity.this.getLookControl().lookAt(target, 30.0F, 30.0F);
+			}
 		}
 	}
 

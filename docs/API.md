@@ -93,8 +93,10 @@ public class Firstmob implements ModInitializer {
 | `getBreedingAge` / `setBreedingAge` | `public int getBreedingAge()` / `public void setBreedingAge(int age)` | 恒 0 / 空实现 |
 | `getXpToDrop` | `protected int getXpToDrop()` | 恒 500，Boss 经验 |
 | 攻击动画 | `public float getAttackAnimationProgress()`；`tryAttack` 命中时把 `ATTACK_ANIM` 设为 10，每 tick 递减 | 0 = 待机，0~1 = 挥击进度；数据同步（`TrackedData<Integer>`），客户端模型据此播放抡臂 |
-| `shootAt` 冷却 | 内部字段 `nextSpitTick` | `shootAt` 自行限流：基础 34 tick，`<20%` 血时 27 tick；锁定模式与 `ProjectileAttackGoal` 共用 |
-| `updateLockMode`（私有） | 每 tick 一次 | `<60%` 血时接管目标与攻击：优先打它的玩家，其次最近玩家；<5 格近战、5~20 格口水、20~40 格声波；>40 格只追不打 |
+| `shootAt` 冷却 | 内部字段 `nextSpitTick` | 锁定模式用 `nextSpitTick` 限流：基础 34 tick，`<20%` 血时 27 tick；普通模式由 `ProjectileAttackGoal` 自己计时 |
+| `updateLockMode`（私有） | 每 tick 一次 | `<60%` 血时接管目标与攻击：优先打它的玩家，其次最近玩家；<5 格近战、5~16 格口水、17~32 格站定声波、超过 32 格到 40 格边追边声波；>40 格只追不打；声波蓄力开始后先打完这一发 |
+| `LockAwareProjectileAttackGoal`（私有内部类） | `ProjectileAttackGoal` 子类 | 锁定模式下不接管走位/攻击，只负责 `lookAt`；走位与攻击统一由 `updateLockMode` 处理 |
+| `isSonicCharging`（私有） | 每 tick 由近战 Goal 与锁定逻辑查询 | 锁定模式声波蓄力中返回 true，近战/口水让路；普通噪音声波不受影响 |
 | `updateIdleFollow`（私有） | 每 tick 一次（仅 `IDLE`） | 20 格内 `lookAt`、>32 格靠近、16~32 格站定不动、<16 格后退、>48 格调用 `tryTeleport` |
 | `IdleWanderGoal`（私有内部类） | `WanderAroundFarGoal` 子类 | 玩家在 16~32 格内时 `canStart` / `shouldContinue` 返回 false，保证"合适距离内只站着看人" |
 | `updateMovementSpeed` / `setSpeedLevel`（私有） | 每 tick 一次 | 游走速度 III（amplifier 2）、战斗追击速度 II、其余按 Boss 形态速度 I 或普通形态无加速 |
