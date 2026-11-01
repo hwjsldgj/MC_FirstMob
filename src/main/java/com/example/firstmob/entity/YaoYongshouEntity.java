@@ -1357,6 +1357,9 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		@Override
 		public void accept(ServerWorld world, BlockPos pos, RegistryEntry<GameEvent> event, Entity entity,
 				Entity owner, float distance) {
+			if (YaoYongshouEntity.this.isDead() || YaoYongshouEntity.this.isRemoved()) {
+				return;
+			}
 			if (!(entity instanceof PlayerEntity player)) {
 				return;
 			}
