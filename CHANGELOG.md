@@ -14,6 +14,7 @@
 
 ### 新增
 
+- 听觉接入监守者式振动系统：`YaoYongshouEntity` 实现 `Vibrations`，由原版 `GameEvent` 分发器投递挖放、开关容器、吃喝、射箭、爆炸等动作；与现有音效 / 挖方块采集并存，判定取两路较大值避免重复计数；潜行时音效通道关闭，羊毛墙按原版 `OCCLUDES_VIBRATION_SIGNALS` 挡住声音
 - 粒子效果（全部为 `minecraft:` 原版粒子，服务端生成）：
   - 血量 < 80% 转 Boss 形态时释放一圈 `dust_color_transition` 尘团（熔岩橙 → 暗紫，80 颗）
   - 血量 < 20% 结算濒死效果时释放 `totem_of_undying` 粒子（100 颗，回血后再次下穿阈值会再触发）

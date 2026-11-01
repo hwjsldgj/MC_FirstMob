@@ -72,6 +72,8 @@ docs/                               # SPEC / API / 文档索引
 12. 护甲/韧性每 tick 按形态与血量重算：普通 5/0、Boss 20/0、Boss 且 <20% 血 10/5。
 13. 脱战回血只在玩家 200 tick 未造成伤害且未满血时挂生命恢复 I；满血或被再次打中立即移除，且只移除本机制挂的无限恢复 I。
 14. 锁定模式声波蓄力开始后不许被近战/口水打断，直到开炮；普通噪音声波不受此限。
+15. 听觉判定值 `loud = max(音效通道, 振动通道)`，两条通道不能相加；振动只记 OTHER，脚步/落地/受击仍由音效通道负责。
+16. `Vibrations` 必须在服务端每 tick 调 `Vibrations.Ticker.tick`，并在 `updateEventHandler` 把 `EntityGameEventHandler` 交给回调；少任一步都收不到 GameEvent。
 
 完整的判定条件、阈值与验收用例见 [docs/SPEC.md](docs/SPEC.md)。
 
@@ -98,6 +100,7 @@ docs/                               # SPEC / API / 文档索引
 10. **刷怪蛋生成幼体**：两条路径都要堵。①在方块上使用：`PassiveEntity#initialize` 在 `SpawnReason.SPAWN_EGG` 下直接 `setBreedingAge(-24000)`（绕过 `setBaby`），所以要覆盖 `isBaby`/`getBreedingAge`/`setBreedingAge`；②对着实体使用：`MobEntity.interact` 是 final，会走 `interactWithItem` → `SpawnEggItem#spawnBaby` → `createChild`，而 `LlamaEntity#createChild` 造出的是原版小羊驼，必须覆盖成返回 null。只改 `interactMob` 没用。
 11. **反击停不下来**：`LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`（`RevengeGoal` 子类，优先级 1），目标被清空后会拿"上次攻击者"立刻重新锁定（日志表现为 `target X -> null` 紧跟 `target null -> X`）。必须 `targetSelector.clear(goal -> true)`，反击逻辑放 `damage()`。
 12. **最大生命被羊驼随机化**：`LlamaEntity` 生成时经 `AbstractHorseEntity#initialize` 调 `AbstractDonkeyEntity#initAttributes`，把最大生命随机成 15~30，覆盖 `ModEntities` 的 100。必须把 `initAttributes(Random)` 覆盖成空实现，否则 80% / 60% / 20% 血量阈值全部按随机值算。
+13. **振动事件不是同一 tick 到达**：原版 `VibrationListener` 按距离把事件延迟约 `distance` tick 才回调（20 格最多晚 1 秒），不能拿音效和振动的同一 tick 做去重；判定用两条通道各自记窗口、取较大值，也不要直接把两边的次数相加。
 
 ## 验证流程
 

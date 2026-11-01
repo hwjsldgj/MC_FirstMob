@@ -63,23 +63,25 @@ public class Firstmob implements ModInitializer {
 
 ### 3.2 `YaoYongshouEntity`
 
-`public class YaoYongshouEntity extends LlamaEntity`
+`public class YaoYongshouEntity extends LlamaEntity implements Vibrations`
 
 #### 构造与静态入口
 
 | 成员 | 签名 | 契约 |
 | --- | --- | --- |
-| 构造函数 | `YaoYongshouEntity(EntityType<? extends LlamaEntity> type, World world)` | 由 `EntityType` 工厂调用，不要直接 `new` |
-| 音效入口 | `public static void onPlayerSound(PlayerEntity player, SoundEvent sound)` | **仅服务端有效**；由 `PlayerSoundMixin` 在 `playSound` 的 HEAD 调用；内部过滤客户端、死亡、旁观者与 `.death` |
+| 构造函数 | `YaoYongshouEntity(EntityType<? extends LlamaEntity> type, World world)` | 由 `EntityType` 工厂调用，不要直接 `new`；构造时创建振动回调与 `EntityGameEventHandler` |
+| 音效入口 | `public static void onPlayerSound(PlayerEntity player, SoundEvent sound)` | **仅服务端有效**；由 `PlayerSoundMixin` 在 `playSound` 的 HEAD 调用；内部过滤客户端、死亡、旁观者、`.death`、潜行与羊毛遮挡 |
 | 动作入口 | `public static void onPlayerAction(PlayerEntity player)` | 同上；由 `PlayerInteractionMixin` 在挖掘/交互方块时调用，记一次 OTHER |
+| 振动接口 | `getVibrationListenerData()` / `getVibrationCallback()` | 返回构造时创建的 `Vibrations.ListenerData` 与 `YaoVibrationCallback`；监听半径 20、标签 `GameEventTags.WARDEN_CAN_LISTEN` |
+| 事件注册 | `public void updateEventHandler(BiConsumer<EntityGameEventHandler<?>, ServerWorld> callback)` | 把 `EntityGameEventHandler<Vibrations.VibrationListener>` 交给原版实体追踪回调；不调用就收不到 GameEvent |
 
-两个静态入口都对 20 格内**所有**姚永寿广播，并各自独立记账；重复调用会重复计数，接入新的事件源时必须保证"一次动作只调一次"。
+两个静态入口都对 20 格内**所有**姚永寿广播，并各自独立记账。音效与振动两条通道的计数在判定时**取较大值**（`loudCount`），不能相加；接入新事件源时同样要遵守这条。
 
 #### 覆写方法
 
 | 方法 | 签名 | 契约 |
 | --- | --- | --- |
-| `tick` | `public void tick()` | 服务端负责目标死亡脱战、反击超时、25 格放弃、声波推进、停火判定 |
+| `tick` | `public void tick()` | 服务端先推进 `Vibrations.Ticker.tick`，再负责目标死亡脱战、反击超时、25 格放弃、声波推进、停火判定 |
 | `setTarget` | `public void setTarget(LivingEntity target)` | 目标是同类时直接忽略；锁定新目标瞬间尝试首发（见 SPEC §5.2） |
 | `damage` | `public boolean damage(DamageSource source, float amount)` | 结算成功后接管反击/声波换目标；返回父类结果 |
 | `shootAt` | `public void shootAt(LivingEntity target, float pullProgress)` | 客户端、`sonicMode`（非 Boss 的声波替代口水）、近战距离内（3 / 5 格）直接返回；发射口水并扣反击/保证计数 |
@@ -102,6 +104,9 @@ public class Firstmob implements ModInitializer {
 | `updateMovementSpeed` / `setSpeedLevel`（私有） | 每 tick 一次 | 游走速度 III（amplifier 2）、战斗追击速度 II、其余按 Boss 形态速度 I 或普通形态无加速 |
 | `updateFormAttributes` / `updateBossFormRevert`（私有） | 每 tick 一次 | 护甲/韧性按形态与血量重算：普通 5/0、Boss 20/0、Boss 且 <20% 血 10/5；Boss 形态（非锁定）连续 600 tick 无目标时退回普通形态 |
 | `updateOutOfCombatRegen`（私有） | 每 tick 一次 | 玩家连续 200 tick 未造成伤害且未满血时挂生命恢复 I（无限时长），满血或再次被打中立即移除；只移除本机制挂的无限恢复 I |
+| `hearVibrationFrom` / `evaluateNoise` / `loudCount`（私有） | 振动回调与音效通道共用 | 振动只记 OTHER；判定值取 `max(recentLoudSounds, recentVibrations)`；达到 3 次触发、9 次升声波 |
+| `isHearingOccluded`（私有静态） | 音效兜底分发前 | 沿视线每格采样 `BlockTags.OCCLUDES_VIBRATION_SIGNALS`，与振动通道使用同一套羊毛遮挡规则 |
+| `YaoVibrationCallback`（私有内部类） | 实现 `Vibrations.Callback` | 半径 20、标签 `WARDEN_CAN_LISTEN`、只接受玩家 emitter；`accept` 中跳过 STEP / HIT_GROUND / ENTITY_DAMAGE / ENTITY_DIE |
 | `teleportNearPlayer`（私有） | 每次最多 6 个随机落点 | 相对玩家朝向随机偏 35°~145°（左右随机、**不含正前方**）、半径 18~22 格，落点要求 3×3×4 空地 |
 | `teleportFarFromPlayer`（私有） | 玩家周围无落点时的退路 | 任意方向 48~64 格；之后 `TELEPORT_RETRY_TICKS`（100 tick = 5 秒）再试 |
 | `nearestPlayer`（私有） | 供锁定与空闲跟随共用 | 同世界最近的存活、非旁观玩家 |
@@ -180,16 +185,24 @@ Loom 1.15 在 `remapJar` 阶段会把方法名重映射为 intermediary，**不�
 
 ```
 玩家 playSound(...) ──HEAD──▶ PlayerSoundMixin ──▶ onPlayerSound
-                                                    │ 过滤（客户端/死亡/旁观者/.death）+ 分类
+                                                    │ 过滤（客户端/死亡/旁观者/.death/潜行/羊毛）+ 分类
                                                     ▼
                                    dispatch：20 格内所有 YaoYongshouEntity
                                                     │
                                                     ▼
-                                   hearSoundFrom：按 UUID 记账 / 限频
-                                       │                            │
-                         loud ≥ 9 ─────┘                            └───── loud ≥ 3
-                               ▼                                          ▼
-                       enterSonicMode                          setTarget(player) → 首发 shootAt
+                                   hearSoundFrom：按 UUID 记入 recentLoudSounds
+                                                    │
+玩家动作 ──▶ GameEvent 分发器 ──▶ VibrationListener ──▶ YaoVibrationCallback.accept
+                                                    │（原版按距离延迟 ≤20 tick；只记 OTHER）
+                                                    ▼
+                                   hearVibrationFrom → recentVibrations
+                                                    │
+                                                    ▼
+                                   evaluateNoise：loud = max(两通道)
+                                        │                            │
+                          loud ≥ 9 ─────┘                            └───── loud ≥ 3
+                                ▼                                          ▼
+                        enterSonicMode                          setTarget(player) → 首发 shootAt
 ```
 
 挖掘/交互不走 `playSound`，由 `PlayerInteractionMixin` 直接调用 `onPlayerAction` → `dispatch`（按 OTHER 处理）。

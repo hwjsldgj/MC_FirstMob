@@ -158,19 +158,20 @@
 
 ### 4.1 声音来源
 
-| 来源 | 注入点 | 计入 |
+| 来源 | 注入点 | 通道 |
 | --- | --- | --- |
-| 玩家音效 | `PlayerEntity#playSound(SoundEvent, float, float)` 的 HEAD（`PlayerSoundMixin`） | 按 4.2 分类 |
-| 挖掘方块 | `ServerPlayerInteractionManager#tryBreakBlock` 的 HEAD（`PlayerInteractionMixin`） | 一次 OTHER |
-| 方块交互（放方块、开箱子等） | `ServerPlayerInteractionManager#interactBlock` 的 HEAD（同上） | 一次 OTHER |
+| 玩家音效 | `PlayerEntity#playSound(SoundEvent, float, float)` 的 HEAD（`PlayerSoundMixin`） | 音效 |
+| 挖掘 / 交互方块 | `ServerPlayerInteractionManager#tryBreakBlock`、`interactBlock` 的 HEAD（`PlayerInteractionMixin`） | 音效 |
+| 原版振动 | 实体实现 `Vibrations`，接收区块段 `GameEvent` 分发器投递的事件（同监守者） | 振动 |
 
-丢弃规则（服务端统一过滤）：客户端世界、玩家死亡、旁观者、音效 ID 以 `.death` 结尾。
+丢弃规则（服务端统一过滤）：客户端世界、玩家死亡、旁观者、音效 ID 以 `.death` 结尾；振动发射者必须是玩家。
 
-分发：以玩家碰撞箱 `expand(20)` 搜索 `YaoYongshouEntity`，再用 `squaredDistanceTo(player) <= 20²` 精确过滤；每个姚永寿独立记账。
+- 振动只接受 `GameEventTags.WARDEN_CAN_LISTEN` 内的事件；怪物、爆炸、发射器不参与索敌。
+- 振动监听半径 20 格，由原版分发器按 `getRange()` 过滤；音效通道仍以玩家碰撞箱 `expand(20)` + `squaredDistanceTo <= 20²` 分发。
 
 ### 4.2 分类
 
-按 `SoundEvent` ID 的 **path 后缀**判断（不含命名空间）：
+音效按 `SoundEvent` ID 的 **path 后缀**判断（不含命名空间）：
 
 | 类别 | 后缀 | 计数上限 |
 | --- | --- | --- |
@@ -179,15 +180,27 @@
 | `HURT` | `.hurt` | 每玩家每 5 秒 1 次 |
 | `OTHER` | 其余全部 | 不限，发生即记 1 次 |
 
+振动按 `GameEvent` 映射：`STEP → WALK`、`HIT_GROUND → JUMP`、`ENTITY_DAMAGE → HURT`，其余事件都算 `OTHER`。**只有 `OTHER` 进入振动记账**，前三种交给音效通道，避免同一动作记两次。
+
 "每 5 秒 1 次"的实现：若该玩家上次同类记录满足 `now - last < 100`，本次直接丢弃。
 
 ### 4.3 记账
 
-- 所有声音都会追加到 `recentSounds`；**只有 OTHER** 追加到 `recentLoudSounds`。
-- 判定只读 `recentLoudSounds`；`recentSounds` 目前只记录（退出声波时按 UUID 清除），不参与决策。
+- 音效通道：所有声音追加到 `recentSounds`，**只有 OTHER** 追加到 `recentLoudSounds`。
+- 振动通道：只把 `OTHER` 追加到 `recentVibrations`。
+- 判定值 `loud = max(recentLoudSounds 计数, recentVibrations 计数)`，**两条通道不能相加**：同一动作往往同时产生音效和 GameEvent，相加会把一次挖方块算成两次；只有一路能听到时取最大值也不会漏。
 - 过期条目：`now - 最早时间戳 > 100` 时移除；每 100 tick 额外全量清理一次。
+- 原版振动按距离延迟（约 1 格 = 1 tick）后才回调，所以振动计数最多比音效晚 20 tick；取最大值可避免窗口错位导致的重复触发。
 
-### 4.4 判定
+### 4.4 遮挡与潜行
+
+两条通道共用同一套规则：
+
+- **羊毛**：沿视线每格采样，遇到 `BlockTags.OCCLUDES_VIBRATION_SIGNALS`（羊毛）即视为被挡住，振动与音效都听不到。
+- **潜行**：玩家 `bypassesSteppingEffects()`（潜行）时音效通道完全闭嘴；振动只保留 `WARDEN_CAN_LISTEN` 中不属于 `IGNORE_VIBRATIONS_SNEAKING` 的事件。因此潜行走路、落地、游泳、射箭不算，挖方块、放方块、开关容器、吃喝、受伤仍能引来。
+- 旁观者、死亡玩家、客户端世界一律忽略。
+
+### 4.5 判定
 
 | 判定 | 条件 | 结果 |
 | --- | --- | --- |
@@ -402,6 +415,9 @@
 15. Boss 形态只有在（非锁定模式）连续 600 tick 无目标时才退回普通形态；退回后血量仍 <80% 时，必须重新获得目标才再次变身（`bossFormDormant`），不能每 tick 反复进出 Boss 形态。
 16. `initAttributes(Random)` 必须保持空实现：羊驼会在生成时随机最大生命 15~30，覆盖配置的 100，导致所有血量阈值失效。
 17. 脱战回血只在玩家 10 秒（200 tick）未造成伤害且未满血时挂生命恢复 I；满血或被再次打中立即移除，且只移除本机制挂的无限恢复 I。
+18. 听觉判定值 `loud` 取音效与振动两条通道的**较大值**，不能相加；振动通道只记 OTHER，脚步/落地/受击仍由音效通道负责。
+19. 音效兜底与振动共用羊毛遮挡和潜行规则：潜行时音效通道关闭；振动按 `WARDEN_CAN_LISTEN` 与 `IGNORE_VIBRATIONS_SNEAKING` 过滤。
+20. `Vibrations` 必须在服务端每 tick 推进 `Vibrations.Ticker.tick`，并在 `updateEventHandler` 中把 `EntityGameEventHandler` 交给回调；少于任一步都收不到 GameEvent。
 
 ## 10. 验收用例
 
@@ -450,6 +466,10 @@
 | A41 | 脱战回血 | 打到 50 血后停手 10 秒 | 获得生命恢复 I 并持续回血；再打一下立即移除恢复；回到满血自动停止 |
 | A42 | 打断前先打完 | 锁定 25 格开始声波蓄力，随即贴到 10 格 | 仍把这发声波打完，期间不吐口水、不近战；结束后恢复 5~16 格口水 |
 | A43 | 边追边声波 | 锁定时站在 35 格 | 一边靠近一边放声波；进入 32 格后站定放，进入 16 格改吐口水 |
+| A44 | 羊毛挡声 | 隔一堵羊毛墙在另一侧 5 秒挖 3 个方块 | 不触发；拆掉羊毛后同样操作触发 |
+| A45 | 潜行脚步 | 20 格内潜行来回走 10 秒 | 不锁定、不吐口水 |
+| A46 | 潜行挖掘 | 潜行状态下 5 秒挖 3 个方块 | 仍触发（音效通道闭嘴，由振动通道听到） |
+| A47 | 双通道去重 | 正常状态下 5 秒挖 3 个方块 | 日志计为 3 次，不因音效 + 振动叠加提前升声波 |
 
 ## 11. 已知限制
 
@@ -459,3 +479,5 @@
 - 方块声音按「挖/交互动作」计数，不按真实音效事件；交互失败、开箱子等也会计一次。
 - 只保留僵尸外观，交易、职业、脑 AI 一概不继承。
 - 听觉只统计玩家，怪物或环境音效不会吸引姚永寿。
+- 振动按距离延迟结算，最远 20 格时最多晚 1 秒；待处理振动不写 NBT，重登会清空。
+- 潜行时音效通道完全关闭，没有对应 GameEvent 的自定义音效在潜行时听不到。

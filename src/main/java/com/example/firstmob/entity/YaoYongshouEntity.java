@@ -5,6 +5,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 
 import com.example.firstmob.Firstmob;
 import com.example.firstmob.registry.ModSounds;
@@ -45,6 +46,9 @@ import net.minecraft.particle.ParticleTypes;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.tag.BlockTags;
+import net.minecraft.registry.tag.GameEventTags;
+import net.minecraft.registry.tag.TagKey;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundEvent;
@@ -57,6 +61,11 @@ import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.random.Random;
+import net.minecraft.world.event.EntityPositionSource;
+import net.minecraft.world.event.GameEvent;
+import net.minecraft.world.event.PositionSource;
+import net.minecraft.world.event.Vibrations;
+import net.minecraft.world.event.listener.EntityGameEventHandler;
 import net.minecraft.world.World;
 import org.joml.Vector3f;
 
@@ -64,10 +73,12 @@ import org.joml.Vector3f;
  * 姚永寿：只保留僵尸的外形（由渲染器负责），
  * 行为完全改用羊驼：寻路、跟随商队、远程吐口水；近距离额外加近战。
  */
-public class YaoYongshouEntity extends LlamaEntity {
+public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** 听觉半径（格）：与羊驼吐口水的最大射程一致，20 格内都算"周围"。 */
 	private static final double HEARING_RANGE = 20.0D;
 	private static final double HEARING_RANGE_SQUARED = HEARING_RANGE * HEARING_RANGE;
+	/** 振动监听半径取整：与音效兜底共用 20 格。 */
+	private static final int HEARING_RANGE_BLOCKS = (int) HEARING_RANGE;
 	/** 追击上限：目标跑出 25 格就放弃。 */
 	private static final double MAX_CHASE_RANGE = 25.0D;
 	private static final double MAX_CHASE_RANGE_SQUARED = MAX_CHASE_RANGE * MAX_CHASE_RANGE;
@@ -221,6 +232,12 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private final Map<UUID, Deque<Long>> recentSounds = new HashMap<>();
 	/** 每个玩家的"非脚步"发声时间，用于判断还要不要继续打。 */
 	private final Map<UUID, Deque<Long>> recentLoudSounds = new HashMap<>();
+	/** 每个玩家被 GameEvent 振动听到的"非脚步"时间：和音效通道取较大值，不能直接相加。 */
+	private final Map<UUID, Deque<Long>> recentVibrations = new HashMap<>();
+	/** 监守者式振动监听的待处理状态（距离延迟、当前选中的振动）。 */
+	private final Vibrations.ListenerData vibrationListenerData = new Vibrations.ListenerData();
+	private final Vibrations.Callback vibrationCallback;
+	private final EntityGameEventHandler<Vibrations.VibrationListener> gameEventHandler;
 	/** 每个玩家上一次走路 / 跳跃 / 受击发声的 tick，用来在 5 秒窗口内各限一次。 */
 	private final Map<UUID, Long> lastWalkTicks = new HashMap<>();
 	private final Map<UUID, Long> lastJumpTicks = new HashMap<>();
@@ -273,6 +290,29 @@ public class YaoYongshouEntity extends LlamaEntity {
 		super(entityType, world);
 		// Boss 不随距离自然清除：刷怪蛋/指令生成后一直留在世界里，直到被打死
 		this.setPersistent();
+		this.vibrationCallback = new YaoVibrationCallback();
+		this.gameEventHandler = new EntityGameEventHandler<>(new Vibrations.VibrationListener(this));
+	}
+
+	@Override
+	public Vibrations.ListenerData getVibrationListenerData() {
+		return this.vibrationListenerData;
+	}
+
+	@Override
+	public Vibrations.Callback getVibrationCallback() {
+		return this.vibrationCallback;
+	}
+
+	/**
+	 * 把振动监听器挂到所在区块段的 GameEvent 分发器上。
+	 * 与原版监守者一致：服务端追踪实体时由 {@code updateEventHandler} 注册，卸载时注销。
+	 */
+	@Override
+	public void updateEventHandler(BiConsumer<EntityGameEventHandler<?>, ServerWorld> callback) {
+		if (this.getWorld() instanceof ServerWorld serverWorld) {
+			callback.accept(this.gameEventHandler, serverWorld);
+		}
 	}
 
 	@Override
@@ -1062,12 +1102,23 @@ public class YaoYongshouEntity extends LlamaEntity {
 		dispatch(player, SOUND_OTHER);
 	}
 
-	/** 把一次"声音"分发给 20 格内的所有姚永寿。 */
+	/** 把一次"声音"分发给 20 格内的所有姚永寿；潜行时闭嘴，并把羊毛等遮挡物算上。 */
 	private static void dispatch(PlayerEntity player, int kind) {
+		// 原版振动只对 IGNORE_VIBRATIONS_SNEAKING 事件闭嘴；音效兜底也一起闭，
+		// 否则玩家蹲下时音效会绕过监守者规则继续引来姚永寿。
+		if (player.bypassesSteppingEffects()) {
+			return;
+		}
 		World world = player.getWorld();
+		Vec3d from = player.getEyePos();
 		Box area = player.getBoundingBox().expand(HEARING_RANGE);
 		for (YaoYongshouEntity yao : world.getEntitiesByClass(YaoYongshouEntity.class, area,
 				candidate -> candidate.squaredDistanceTo(player) <= HEARING_RANGE_SQUARED)) {
+			// 振动通道自己会检查遮挡；音效兜底没有，这里补上，
+			// 避免一堵羊毛墙只挡振动、不挡声音
+			if (isHearingOccluded(world, from, yao.getEyePos())) {
+				continue;
+			}
 			yao.hearSoundFrom(player, kind);
 		}
 	}
@@ -1096,8 +1147,32 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (loud) {
 			record(this.recentLoudSounds, uuid, now);
 		}
-		// 5 秒内"非脚步"声音超过 8 次：升级成声波模式，优先于吐口水
-		if (!this.sonicMode && countInWindow(this.recentLoudSounds, uuid, now) >= SONIC_SOUND_THRESHOLD) {
+		this.evaluateNoise(player, uuid, now);
+	}
+
+	/**
+	 * 监守者式振动：只记"真噪音"（脚步 / 落地 / 受击由音效通道负责），
+	 * 和音效通道各记一份，判定时取较大值。
+	 */
+	private void hearVibrationFrom(PlayerEntity player) {
+		if (this.lockMode) {
+			return;
+		}
+		long now = this.getWorld().getTime();
+		record(this.recentVibrations, player.getUuid(), now);
+		this.evaluateNoise(player, player.getUuid(), now);
+	}
+
+	/**
+	 * 两条听觉通道共用一套判定。
+	 * 同一个动作通常会同时产生音效和 GameEvent（挖方块、放方块、吃喝等），
+	 * 所以计数取两边的较大值而不是相加，避免一次动作被算成两次；
+	 * 只有其中一路能听到的声音（例如没有对应 GameEvent 的自定义音效）也不会丢。
+	 */
+	private void evaluateNoise(PlayerEntity player, UUID uuid, long now) {
+		int loud = this.loudCount(uuid, now);
+		// 5 秒内"非脚步"声音达到 9 次：升级成声波模式，优先于吐口水
+		if (!this.sonicMode && loud >= SONIC_SOUND_THRESHOLD) {
 			this.enterSonicMode(player, now);
 			return;
 		}
@@ -1109,19 +1184,46 @@ public class YaoYongshouEntity extends LlamaEntity {
 			// 已经在打他了，只更新计数
 			return;
 		}
-		if (countInWindow(this.recentLoudSounds, uuid, now) < SOUND_THRESHOLD) {
+		if (loud < SOUND_THRESHOLD) {
 			// 只有真实动作声才触发：走路/跳跃/受击记在案，但不会把它叫过来
 			return;
 		}
 		this.noiseTarget = uuid;
 		this.guaranteedShots = 1;
 		this.noiseTriggerTime = now;
-		debug("TRIGGER other={}", countInWindow(this.recentLoudSounds, uuid, now));
+		debug("TRIGGER other={}", loud);
 		// 声音触发的战斗不算"挨打反击"，别被反击计数提前收手
 		this.revengeMode = false;
 		this.revengeShots = 0;
 		// 锁定后交给羊驼自带的 ProjectileAttackGoal：够近就吐口水，太远就先走近
 		this.setTarget(player);
+	}
+
+	/** 窗口内"真噪音"次数：音效与振动两条通道取较大值，不能相加。 */
+	private int loudCount(UUID uuid, long now) {
+		return Math.max(countInWindow(this.recentLoudSounds, uuid, now),
+				countInWindow(this.recentVibrations, uuid, now));
+	}
+
+	/**
+	 * 复刻原版 {@code VibrationListener#isOccluded}：沿视线每格采样，
+	 * 碰到羊毛等 {@link BlockTags#OCCLUDES_VIBRATION_SIGNALS} 方块就算被挡住。
+	 * 音效兜底没有 GameEvent 的遮挡检查，这里补上，保证两种声源同一套规则。
+	 */
+	private static boolean isHearingOccluded(World world, Vec3d from, Vec3d to) {
+		Vec3d delta = to.subtract(from);
+		double length = delta.length();
+		if (length < 1.0E-4D) {
+			return false;
+		}
+		Vec3d step = delta.multiply(1.0D / length);
+		for (double traveled = 0.0D; traveled < length; traveled += 1.0D) {
+			BlockPos pos = BlockPos.ofFloored(from.add(step.multiply(traveled)));
+			if (world.getBlockState(pos).isIn(BlockTags.OCCLUDES_VIBRATION_SIGNALS)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static void record(Map<UUID, Deque<Long>> map, UUID uuid, long now) {
@@ -1156,8 +1258,67 @@ public class YaoYongshouEntity extends LlamaEntity {
 		});
 	}
 
+	/** 监守者式振动回调：只接受玩家发出的、原版监听标签内的 GameEvent。 */
+	private final class YaoVibrationCallback implements Vibrations.Callback {
+		private final PositionSource positionSource = new EntityPositionSource(YaoYongshouEntity.this,
+				YaoYongshouEntity.this.getStandingEyeHeight());
+
+		@Override
+		public int getRange() {
+			return HEARING_RANGE_BLOCKS;
+		}
+
+		@Override
+		public PositionSource getPositionSource() {
+			return this.positionSource;
+		}
+
+		@Override
+		public TagKey<GameEvent> getTag() {
+			return GameEventTags.WARDEN_CAN_LISTEN;
+		}
+
+		@Override
+		public boolean accepts(ServerWorld world, BlockPos pos, RegistryEntry<GameEvent> event,
+				GameEvent.Emitter emitter) {
+			if (YaoYongshouEntity.this.isAiDisabled() || YaoYongshouEntity.this.isDead()) {
+				return false;
+			}
+			if (!world.getWorldBorder().contains(pos)) {
+				return false;
+			}
+			Entity source = emitter.sourceEntity();
+			// 只认玩家：怪物、爆炸、发射器发出的振动不参与索敌
+			if (!(source instanceof PlayerEntity player)) {
+				return false;
+			}
+			return !player.isSpectator() && player.isAlive();
+		}
+
+		@Override
+		public void accept(ServerWorld world, BlockPos pos, RegistryEntry<GameEvent> event, Entity entity,
+				Entity owner, float distance) {
+			if (!(entity instanceof PlayerEntity player)) {
+				return;
+			}
+			if (player.isSpectator() || !player.isAlive()) {
+				return;
+			}
+			// 脚步 / 落地 / 受击在音效通道里已经记过，这里只收"真噪音"，避免双份计数
+			if (event.matches(GameEvent.STEP) || event.matches(GameEvent.HIT_GROUND)
+					|| event.matches(GameEvent.ENTITY_DAMAGE) || event.matches(GameEvent.ENTITY_DIE)) {
+				return;
+			}
+			YaoYongshouEntity.this.hearVibrationFrom(player);
+		}
+	}
+
 	@Override
 	public void tick() {
+		// 振动的"距离延迟/选择"由原版 Ticker 推进，必须在服务端每 tick 调一次
+		if (this.getWorld() instanceof ServerWorld serverWorld) {
+			Vibrations.Ticker.tick(serverWorld, this.vibrationListenerData, this.vibrationCallback);
+		}
 		super.tick();
 		World world = this.getWorld();
 		if (world.isClient()) {
@@ -1208,6 +1369,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (now % 100L == 0L) {
 			pruneOutdated(this.recentSounds, now);
 			pruneOutdated(this.recentLoudSounds, now);
+			pruneOutdated(this.recentVibrations, now);
 		}
 	}
 
@@ -1230,8 +1392,9 @@ public class YaoYongshouEntity extends LlamaEntity {
 			guaranteed = false;
 		}
 		// 判断"吵不吵"只看真噪音：走路/跳跃/受击都不维持仇恨
-		if (!guaranteed && countInWindow(this.recentLoudSounds, this.noiseTarget, now) < RELEASE_SOUND_COUNT) {
-			debug("RELEASE other={}", countInWindow(this.recentLoudSounds, this.noiseTarget, now));
+		int loud = this.loudCount(this.noiseTarget, now);
+		if (!guaranteed && loud < RELEASE_SOUND_COUNT) {
+			debug("RELEASE other={}", loud);
 			this.setTarget(null);
 			this.noiseTarget = null;
 		}
@@ -1250,7 +1413,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.guaranteedShots = 0;
 		this.revengeMode = false;
 		this.revengeShots = 0;
-		debug("SONIC enter other={}", countInWindow(this.recentLoudSounds, player.getUuid(), now));
+		debug("SONIC enter other={}", this.loudCount(player.getUuid(), now));
 		// 这里会立即转向；shootAt 在声波模式下直接返回，不会顺手吐口水
 		this.setTarget(player);
 	}
@@ -1261,6 +1424,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		if (this.noiseTarget != null) {
 			this.recentSounds.remove(this.noiseTarget);
 			this.recentLoudSounds.remove(this.noiseTarget);
+			this.recentVibrations.remove(this.noiseTarget);
 		}
 		this.sonicMode = false;
 		this.sonicTicks = 0;
