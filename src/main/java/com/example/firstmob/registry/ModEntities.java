@@ -17,8 +17,10 @@ public final class ModEntities {
 	private static final double MAX_HEALTH = 100.0D;
 	/** 普通形态体型 1 倍；掉到 80% 血以下时由实体自己写入 2 倍。 */
 	private static final double NORMAL_SCALE = 1.0D;
-	/** 普通形态无护甲；掉到 80% 血以下时由实体自己写入 20 点。 */
-	private static final double NORMAL_ARMOR = 0.0D;
+	/** 普通形态护甲 5 点；Boss 形态由实体改写为 20 点，低于 20% 血时 10 点 + 10 韧性。 */
+	private static final double NORMAL_ARMOR = 5.0D;
+	/** 普通形态没有护甲韧性；Boss 形态低于 20% 血时由实体写入 10。 */
+	private static final double NORMAL_ARMOR_TOUGHNESS = 0.0D;
 	/** 近战伤害：对齐铁傀儡（`GENERIC_ATTACK_DAMAGE = 15`）。 */
 	private static final double ATTACK_DAMAGE = 15.0D;
 	/** 近战击退：铁傀儡没有 `attack_knockback` 加成，靠命中时向上 0.4 的顶飞，所以这里保持 0。 */
@@ -43,6 +45,7 @@ public final class ModEntities {
 				.add(EntityAttributes.GENERIC_MAX_HEALTH, MAX_HEALTH)
 				.add(EntityAttributes.GENERIC_SCALE, NORMAL_SCALE)
 				.add(EntityAttributes.GENERIC_ARMOR, NORMAL_ARMOR)
+				.add(EntityAttributes.GENERIC_ARMOR_TOUGHNESS, NORMAL_ARMOR_TOUGHNESS)
 				.add(EntityAttributes.GENERIC_ATTACK_DAMAGE, ATTACK_DAMAGE)
 				.add(EntityAttributes.GENERIC_ATTACK_KNOCKBACK, ATTACK_KNOCKBACK));
 	}

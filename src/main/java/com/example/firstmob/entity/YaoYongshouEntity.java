@@ -56,6 +56,7 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.random.Random;
 import net.minecraft.world.World;
 import org.joml.Vector3f;
 
@@ -129,12 +130,25 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int BOSS_XP_REWARD = 500;
 	/** Boss 血条同步间隔：每 tick 都刷新会不停发包，10 tick（0.5 秒）足够跟手。 */
 	private static final int BOSS_BAR_INTERVAL_TICKS = 10;
-	/** Boss 形态血量阈值：掉到 80% 以下就变身，单向不可逆。 */
+	/** Boss 形态血量阈值：掉到 80% 以下就变身；退回普通形态后重新获得目标会再次变身。 */
 	private static final float BOSS_FORM_HEALTH_RATIO = 0.8F;
 	/** Boss 形态体型：运行时写进 generic.scale，碰撞箱、眼高与模型一起放大。 */
 	private static final double BOSS_SCALE = 2.0D;
-	/** Boss 形态护甲：20 点约减伤 80%，未加护甲韧性。 */
+	/** 普通形态体型：退回普通形态时写回。 */
+	private static final double NORMAL_SCALE = 1.0D;
+	/** 普通形态护甲：5 点（约减伤 20%）。 */
+	private static final double NORMAL_ARMOR = 5.0D;
+	/** 普通形态没有护甲韧性。 */
+	private static final double NORMAL_ARMOR_TOUGHNESS = 0.0D;
+	/** Boss 形态护甲：20 点约减伤 80%。 */
 	private static final double BOSS_ARMOR = 20.0D;
+	/** Boss 形态基础护甲韧性：0；只有低于 20% 血时才拉满。 */
+	private static final double BOSS_ARMOR_TOUGHNESS = 0.0D;
+	/** 濒死护甲：护甲降到 10、韧性升到 10，用低护甲高韧性硬扛单发重击。 */
+	private static final double LOW_HEALTH_ARMOR = 10.0D;
+	private static final double LOW_HEALTH_ARMOR_TOUGHNESS = 10.0D;
+	/** 退回普通形态：解除锁定后连续 30 秒（600 tick）没有目标才触发。 */
+	private static final int BOSS_FORM_REVERT_TICKS = 600;
 	/** 濒死阈值：低于 20% 触发附魔金苹果效果（每次下穿阈值触发一次）。 */
 	private static final float LOW_HEALTH_RATIO = 0.2F;
 	/** 伤害吸收 IV，2 分钟（现版效果）。 */
@@ -218,8 +232,12 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private boolean sonicMode;
 	/** 距离上一次声波已经过去的 tick 数，用来做蓄力/冷却节拍。 */
 	private int sonicTicks;
-	/** 是否已转入 Boss 形态：只由血量触发，一旦为 true 不再回退。 */
+	/** 是否处于 Boss 形态：血量 <80% 触发；解除锁定后 30 秒没有目标会退回普通形态。 */
 	private boolean bossForm;
+	/** 退回普通形态后置 true：血量仍 <80% 时保持普通形态，直到重新获得目标才再次变身。 */
+	private boolean bossFormDormant;
+	/** Boss 形态下连续没有目标的 tick 数，满 600 tick（30 秒）退回普通形态。 */
+	private int noTargetTicks;
 	/** 本次"低于 20%"是否已结算过金苹果效果，回血到 20% 以上时复位。 */
 	private boolean lowHealthTriggered;
 	/** 是否处于残血锁定模式：血量 <60% 进入，满血且 30 秒无伤才解除。 */
@@ -253,6 +271,15 @@ public class YaoYongshouEntity extends LlamaEntity {
 	}
 
 	/**
+	 * 羊驼在生成时会把最大生命随机成 15~30，覆盖 ModEntities 里配置的 100 点。
+	 * 姚永寿的 80% / 60% / 20% 血量阈值都按 100 点设计，这里必须保持原值。
+	 */
+	@Override
+	protected void initAttributes(Random random) {
+		// 空实现：不随机最大生命
+	}
+
+	/**
 	 * 挥击动画进度：0 = 待机，0~1 = 抬臂→抡下→回位。
 	 *
 	 * @param animationProgress 渲染端传入的 `age + tickDelta`，用它算时间差才能按帧插值
@@ -273,16 +300,22 @@ public class YaoYongshouEntity extends LlamaEntity {
 	// 形态：普通 → Boss → 濒死
 	// ------------------------------------------------------------------
 
-	/** 每 tick 判一次血量阈值：<80% 转 Boss 形态，<20% 结算附魔金苹果效果。 */
+	/** 每 tick 判一次血量阈值：<80% 转 Boss 形态（退回后要重新获得目标），<20% 结算附魔金苹果效果。 */
 	private void updateFormState() {
 		// 死亡那一帧血量已经是 0，别在尸体上再变身/补金苹果
 		if (!this.isAlive()) {
 			return;
 		}
 		float ratio = this.getHealth() / this.getMaxHealth();
-		if (!this.bossForm && ratio < BOSS_FORM_HEALTH_RATIO) {
-			this.enterBossForm();
+		if (!this.bossForm) {
+			if (ratio >= BOSS_FORM_HEALTH_RATIO) {
+				// 回满血：下次掉到 80% 以下仍照常变身
+				this.bossFormDormant = false;
+			} else if (!this.bossFormDormant || this.getTarget() != null) {
+				this.enterBossForm();
+			}
 		}
+		this.updateFormAttributes(ratio);
 		if (ratio < LOW_HEALTH_RATIO) {
 			if (!this.lowHealthTriggered) {
 				this.lowHealthTriggered = true;
@@ -300,19 +333,77 @@ public class YaoYongshouEntity extends LlamaEntity {
 		}
 	}
 
-	/** 转 Boss 形态：体型/护甲写进属性，给永久速度 I、力量 I；单向，不会退回普通形态。 */
+	/** 转 Boss 形态：体型写进属性，给永久速度 I、力量 I、抗性提升 I；护甲/韧性由 {@link #updateFormAttributes} 每 tick 维护。 */
 	private void enterBossForm() {
 		this.bossForm = true;
+		this.bossFormDormant = false;
+		this.noTargetTicks = 0;
 		this.setBaseAttribute(EntityAttributes.GENERIC_SCALE, BOSS_SCALE);
-		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR, BOSS_ARMOR);
 		this.applyBossBuffs();
+		this.updateFormAttributes(this.getHealth() / this.getMaxHealth());
 		this.spawnBossFormParticles();
-		debug("BOSS form enter hp={}", this.getHealth());
+		debug("BOSS form enter hp={} strength={} resistance={}", this.getHealth(),
+				this.getStatusEffect(StatusEffects.STRENGTH) != null,
+				this.getStatusEffect(StatusEffects.RESISTANCE) != null);
 	}
 
-	/** 永久增益：力量 I。移动速度统一由 {@link #updateMovementSpeed()} 管理（游走 III / 追击 II / 常态 I）。 */
+	/**
+	 * 退回普通形态：体型/护甲/韧性恢复普通数值，收回力量与 Boss 抗性，收起血条。
+	 * 只由 {@link #updateBossFormRevert()} 调用；锁定模式期间不会触发。
+	 */
+	private void exitBossForm() {
+		this.bossForm = false;
+		this.bossFormDormant = true;
+		this.noTargetTicks = 0;
+		this.setBaseAttribute(EntityAttributes.GENERIC_SCALE, NORMAL_SCALE);
+		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR, NORMAL_ARMOR);
+		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR_TOUGHNESS, NORMAL_ARMOR_TOUGHNESS);
+		// 退回只发生在 ≥60% 血（锁定模式不会退），此时不会有金苹果的抗性在跑
+		this.removeStatusEffect(StatusEffects.STRENGTH);
+		this.removeStatusEffect(StatusEffects.RESISTANCE);
+		this.bossBar.setVisible(false);
+		debug("BOSS form exit hp={} armor={} toughness={}", this.getHealth(),
+				this.getAttributeValue(EntityAttributes.GENERIC_ARMOR),
+				this.getAttributeValue(EntityAttributes.GENERIC_ARMOR_TOUGHNESS));
+	}
+
+	/** Boss 形态解除锁定后连续 30 秒（600 tick）没有目标：退回普通形态，等再次获得目标才重新变身。 */
+	private void updateBossFormRevert() {
+		if (!this.bossForm) {
+			this.noTargetTicks = 0;
+			return;
+		}
+		if (this.lockMode || this.getTarget() != null) {
+			this.noTargetTicks = 0;
+			return;
+		}
+		if (++this.noTargetTicks >= BOSS_FORM_REVERT_TICKS) {
+			this.exitBossForm();
+		}
+	}
+
+	/** 护甲/韧性随形态与血量比例实时重算：普通 5/0；Boss 20/0；Boss 且 <20% 血 10/10。 */
+	private void updateFormAttributes(float healthRatio) {
+		boolean boss = this.bossForm;
+		boolean lowHealth = boss && healthRatio < LOW_HEALTH_RATIO;
+		double armor = !boss ? NORMAL_ARMOR : (lowHealth ? LOW_HEALTH_ARMOR : BOSS_ARMOR);
+		double toughness = !boss ? NORMAL_ARMOR_TOUGHNESS
+				: (lowHealth ? LOW_HEALTH_ARMOR_TOUGHNESS : BOSS_ARMOR_TOUGHNESS);
+		if (this.getAttributeValue(EntityAttributes.GENERIC_ARMOR) == armor
+				&& this.getAttributeValue(EntityAttributes.GENERIC_ARMOR_TOUGHNESS) == toughness) {
+			return;
+		}
+		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR, armor);
+		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR_TOUGHNESS, toughness);
+		debug("FORM armor={} toughness={} boss={} hp={} max={}", armor, toughness, boss, this.getHealth(),
+				this.getMaxHealth());
+	}
+
+	/** 永久增益：力量 I、抗性提升 I。移动速度统一由 {@link #updateMovementSpeed()} 管理（游走 III / 追击 II / 常态 I）。 */
 	private void applyBossBuffs() {
 		this.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, StatusEffectInstance.INFINITE, 0,
+				false, false, true));
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, StatusEffectInstance.INFINITE, 0,
 				false, false, true));
 	}
 
@@ -328,11 +419,14 @@ public class YaoYongshouEntity extends LlamaEntity {
 				false, true, true));
 	}
 
-	/** 改属性基值；缩放变了必须重算碰撞箱，否则判定框还停在旧尺寸。 */
+	/** 改属性基值；只有缩放变了才重算碰撞箱，护甲/韧性每 tick 同步时不白算一遍。 */
 	private void setBaseAttribute(RegistryEntry<EntityAttribute> attribute, double value) {
 		EntityAttributeInstance instance = this.getAttributeInstance(attribute);
-		if (instance != null) {
-			instance.setBaseValue(value);
+		if (instance == null || instance.getBaseValue() == value) {
+			return;
+		}
+		instance.setBaseValue(value);
+		if (attribute == EntityAttributes.GENERIC_SCALE) {
 			this.calculateDimensions();
 		}
 	}
@@ -762,11 +856,12 @@ public class YaoYongshouEntity extends LlamaEntity {
 				: SONIC_INTERVAL_TICKS;
 	}
 
-	/** 形态进存档：重载后退回普通形态或立刻重刷濒死效果都是错的。 */
+	/** 形态进存档：重载后不能丢掉 Boss 形态，也不能把「已退回普通形态」读成未变身。 */
 	@Override
 	public void writeCustomDataToNbt(NbtCompound nbt) {
 		super.writeCustomDataToNbt(nbt);
 		nbt.putBoolean("BossForm", this.bossForm);
+		nbt.putBoolean("BossFormDormant", this.bossFormDormant);
 		nbt.putBoolean("LowHealthTriggered", this.lowHealthTriggered);
 	}
 
@@ -774,11 +869,14 @@ public class YaoYongshouEntity extends LlamaEntity {
 	public void readCustomDataFromNbt(NbtCompound nbt) {
 		super.readCustomDataFromNbt(nbt);
 		this.bossForm = nbt.getBoolean("BossForm");
+		this.bossFormDormant = nbt.getBoolean("BossFormDormant");
 		this.lowHealthTriggered = nbt.getBoolean("LowHealthTriggered");
+		this.noTargetTicks = 0;
 		// 速度等级由 updateMovementSpeed 每 tick 按状态重算，读档后置空等它接管
 		this.speedLevel = -1;
 		if (this.bossForm && !this.getWorld().isClient()) {
-			// 属性基值随 Attributes 存档；永久增益属于状态，读档时补回来
+			// 属性基值随 Attributes 存档；体型与永久增益属于状态，读档时补回来
+			this.setBaseAttribute(EntityAttributes.GENERIC_SCALE, BOSS_SCALE);
 			this.applyBossBuffs();
 		}
 	}
@@ -1025,6 +1123,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.updateNoiseAggro(now);
 			this.updateIdleFollow(now);
 		}
+		this.updateBossFormRevert();
 		this.updateMovementSpeed();
 		this.updateSpeedTrailParticles();
 		if (now % 100L == 0L) {

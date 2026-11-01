@@ -68,6 +68,8 @@ docs/                               # SPEC / API / 文档索引
 8. 刷怪蛋模型不能写 `"parent": "item/generated"`。
 9. 口水与近战的伤害类型必须 `scaling: never`。
 10. 反击计数只在 `shootAt` / `tryAttack` 命中时扣减。
+11. Boss 形态退回只在「锁定模式已解除 + 连续 600 tick 无目标」时发生；退回后血量仍 <80% 时必须重新获得目标才再次变身（`bossFormDormant`），不能每 tick 反复进出。
+12. 护甲/韧性每 tick 按形态与血量重算：普通 5/0、Boss 20/0、Boss 且 <20% 血 10/10。
 
 完整的判定条件、阈值与验收用例见 [docs/SPEC.md](docs/SPEC.md)。
 
@@ -93,6 +95,7 @@ docs/                               # SPEC / API / 文档索引
 9. **近战抢目标**：`CloseMeleeGoal` 必须在 `canStart` 和 `shouldContinue` 里都卡距离；只卡 `canStart` 会让它一路追着目标跑、永远压住远程。
 10. **刷怪蛋生成幼体**：两条路径都要堵。①在方块上使用：`PassiveEntity#initialize` 在 `SpawnReason.SPAWN_EGG` 下直接 `setBreedingAge(-24000)`（绕过 `setBaby`），所以要覆盖 `isBaby`/`getBreedingAge`/`setBreedingAge`；②对着实体使用：`MobEntity.interact` 是 final，会走 `interactWithItem` → `SpawnEggItem#spawnBaby` → `createChild`，而 `LlamaEntity#createChild` 造出的是原版小羊驼，必须覆盖成返回 null。只改 `interactMob` 没用。
 11. **反击停不下来**：`LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`（`RevengeGoal` 子类，优先级 1），目标被清空后会拿"上次攻击者"立刻重新锁定（日志表现为 `target X -> null` 紧跟 `target null -> X`）。必须 `targetSelector.clear(goal -> true)`，反击逻辑放 `damage()`。
+12. **最大生命被羊驼随机化**：`LlamaEntity` 生成时经 `AbstractHorseEntity#initialize` 调 `AbstractDonkeyEntity#initAttributes`，把最大生命随机成 15~30，覆盖 `ModEntities` 的 100。必须把 `initAttributes(Random)` 覆盖成空实现，否则 80% / 60% / 20% 血量阈值全部按随机值算。
 
 ## 验证流程
 
