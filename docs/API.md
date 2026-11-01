@@ -70,22 +70,21 @@ public class Firstmob implements ModInitializer {
 | 成员 | 签名 | 契约 |
 | --- | --- | --- |
 | 构造函数 | `YaoYongshouEntity(EntityType<? extends LlamaEntity> type, World world)` | 由 `EntityType` 工厂调用，不要直接 `new`；构造时创建振动回调与 `EntityGameEventHandler` |
-| 音效入口 | `public static void onPlayerSound(PlayerEntity player, SoundEvent sound)` | **仅服务端有效**；由 `PlayerSoundMixin` 在 `playSound` 的 HEAD 调用；内部过滤客户端、死亡、旁观者、`.death`、潜行与羊毛遮挡 |
-| 动作入口 | `public static void onPlayerAction(PlayerEntity player)` | 同上；由 `PlayerInteractionMixin` 在挖掘/交互方块时调用，记一次 OTHER |
+| 音效入口 | `public static void onPlayerSound(PlayerEntity player, SoundEvent sound)` | **仅服务端有效**；由 `PlayerSoundMixin` 在 `playSound` 的 HEAD 调用；只补"同一动作没有 GameEvent"的声音（2 tick 配对），过滤客户端、死亡、旁观者、`.death`、潜行与羊毛 |
 | 振动接口 | `getVibrationListenerData()` / `getVibrationCallback()` | 返回构造时创建的 `Vibrations.ListenerData` 与 `YaoVibrationCallback`；监听半径 20、标签 `GameEventTags.WARDEN_CAN_LISTEN` |
 | 事件注册 | `public void updateEventHandler(BiConsumer<EntityGameEventHandler<?>, ServerWorld> callback)` | 把 `EntityGameEventHandler<Vibrations.VibrationListener>` 交给原版实体追踪回调；不调用就收不到 GameEvent |
 
-两个静态入口都对 20 格内**所有**姚永寿广播，并各自独立记账。音效与振动两条通道的计数在判定时**取较大值**（`loudCount`），不能相加；接入新事件源时同样要遵守这条。
+音效补充的配对规则：`accepts` 收到 GameEvent 时记 `lastGameEventTicks`，同 tick 附近已经有振动记录的音效直接跳过；若音效先到，`undoSupplementIfAny` 会撤回那次补充愤怒。
 
 #### 覆写方法
 
 | 方法 | 签名 | 契约 |
 | --- | --- | --- |
-| `tick` | `public void tick()` | 服务端先推进 `Vibrations.Ticker.tick`，再负责目标死亡脱战、反击超时、25 格放弃、声波推进、停火判定 |
+| `tick` | `public void tick()` | 服务端先推进 `Vibrations.Ticker.tick`，再负责愤怒衰减/档位、好奇、目标死亡脱战、反击超时、声波推进 |
 | `setTarget` | `public void setTarget(LivingEntity target)` | 目标是同类时直接忽略；锁定新目标瞬间尝试首发（见 SPEC §5.2） |
-| `damage` | `public boolean damage(DamageSource source, float amount)` | 结算成功后接管反击/声波换目标；返回父类结果 |
-| `shootAt` | `public void shootAt(LivingEntity target, float pullProgress)` | 客户端、`sonicMode`（非 Boss 的声波替代口水）、近战距离内（3 / 5 格）直接返回；发射口水并扣反击/保证计数 |
-| `tryAttack` | `public boolean tryAttack(Entity target)` | 用 `firstmob:yao_melee`（`scaling: never`）结算 15 点近战伤害，和平难度也生效；挥击动画与尘柱按挥击触发（不依赖伤害是否结算成功），命中后按铁傀儡的方式向上顶目标（`0.4 × (1 - 击退抗性)`）并扣反击/保证计数 |
+| `damage` | `public boolean damage(DamageSource source, float amount)` | 结算成功后接管反击/声波换目标，并给攻击者加愤怒；返回父类结果 |
+| `shootAt` | `public void shootAt(LivingEntity target, float pullProgress)` | 客户端、`sonicMode`（激怒声波替代口水）、近战距离内（3 / 5 格）直接返回；发射口水并扣反击计数 |
+| `tryAttack` | `public boolean tryAttack(Entity target)` | 用 `firstmob:yao_melee`（`scaling: never`）结算 15 点近战伤害，和平难度也生效；挥击动画与尘柱按挥击触发（不依赖伤害是否结算成功），命中后按铁傀儡的方式向上顶目标（`0.4 × (1 - 击退抗性)`）并扣反击计数 |
 | 近战伤害类型 | `public static final RegistryKey<DamageType> MELEE_DAMAGE_TYPE` | `firstmob:yao_melee`，数据文件必须存在；`scaling` 必须为 `never` |
 | `interactMob` | `public ActionResult interactMob(PlayerEntity player, Hand hand)` | 恒返回 `PASS`，拒绝喂食、驯服、上鞍等交互 |
 | `createChild` | `public LlamaEntity createChild(ServerWorld world, PassiveEntity partner)` | 恒返回 `null`，不产生后代 |
@@ -104,9 +103,14 @@ public class Firstmob implements ModInitializer {
 | `updateMovementSpeed` / `setSpeedLevel`（私有） | 每 tick 一次 | 游走速度 III（amplifier 2）、战斗追击速度 II、其余按 Boss 形态速度 I 或普通形态无加速 |
 | `updateFormAttributes` / `updateBossFormRevert`（私有） | 每 tick 一次 | 护甲/韧性按形态与血量重算：普通 5/0、Boss 20/0、Boss 且 <20% 血 10/5；Boss 形态（非锁定）连续 600 tick 无目标时退回普通形态 |
 | `updateOutOfCombatRegen`（私有） | 每 tick 一次 | 玩家连续 200 tick 未造成伤害且未满血时挂生命恢复 I（无限时长），满血或再次被打中立即移除；只移除本机制挂的无限恢复 I |
-| `hearVibrationFrom` / `evaluateNoise` / `loudCount`（私有） | 振动回调与音效通道共用 | 振动只记 OTHER；判定值取 `max(recentLoudSounds, recentVibrations)`；达到 3 次触发、9 次升声波 |
-| `isHearingOccluded`（私有静态） | 音效兜底分发前 | 沿视线每格采样 `BlockTags.OCCLUDES_VIBRATION_SIGNALS`，与振动通道使用同一套羊毛遮挡规则 |
-| `YaoVibrationCallback`（私有内部类） | 实现 `Vibrations.Callback` | 半径 20、标签 `WARDEN_CAN_LISTEN`、只接受玩家 emitter；`accept` 中跳过 STEP / HIT_GROUND / ENTITY_DAMAGE / ENTITY_DIE |
+| `hearVibrationFrom` / `hearSupplement`（私有） | 振动回调与音效补充共用 | 加愤怒并触发好奇；小噪音按行走/落地/受击 5 秒限频，大噪音不限 |
+| `updateAngerBehavior`（私有） | 每次听觉事件与每 tick | 每玩家 0~100；`<30` 冷静、`30~99` 警觉、`100` 激怒；声波进入 100、退出 `<90`；Boss 强制 100 |
+| `getPrimeSuspect`（私有） | 每次档位判定 | 愤怒最高的存活玩家，同分取最近 |
+| `triggerCuriosity` / `updateCuriosityLook`（私有） | 冷静时听声 | 记录声源并转向 40 tick，40 tick 冷却；目标/声波/锁定出现即停止 |
+| `isHearingOccluded`（私有静态） | 音效补充分发前 | 沿视线每格采样 `BlockTags.OCCLUDES_VIBRATION_SIGNALS`，与振动共用羊毛规则 |
+| `YaoVibrationCallback`（私有内部类） | 实现 `Vibrations.Callback` | 半径 20、标签 `WARDEN_CAN_LISTEN`、只接受玩家 emitter；`accepts` 记配对标记，`accept` 分大/小噪音 |
+| `CuriousLookGoal`（私有内部类） | 优先级 1 | 好奇时只转向声源，不改变寻路 |
+| `CalmLookAtEntityGoal` / `CalmLookAroundGoal`（私有内部类） | 优先级 7 / 8 | 好奇期间让位，避免注视玩家/随机张望打断声源视线 |
 | `teleportNearPlayer`（私有） | 每次最多 6 个随机落点 | 相对玩家朝向随机偏 35°~145°（左右随机、**不含正前方**）、半径 18~22 格，落点要求 3×3×4 空地 |
 | `teleportFarFromPlayer`（私有） | 玩家周围无落点时的退路 | 任意方向 48~64 格；之后 `TELEPORT_RETRY_TICKS`（100 tick = 5 秒）再试 |
 | `nearestPlayer`（私有） | 供锁定与空闲跟随共用 | 同世界最近的存活、非旁观玩家 |
@@ -115,11 +119,11 @@ public class Firstmob implements ModInitializer {
 | `writeCustomDataToNbt` / `readCustomDataFromNbt` | `public void writeCustomDataToNbt(NbtCompound nbt)` / `public void readCustomDataFromNbt(NbtCompound nbt)` | 存档 `BossForm`（是否处于 Boss 形态）、`BossFormDormant`（是否已退回普通形态、等目标再变身）与 `LowHealthTriggered`（本轮濒死效果是否已结算）；读档时补回 2 倍体型与永久力量/抗性 |
 | 音效 | `protected SoundEvent getAmbientSound()`、`getHurtSound(DamageSource)`、`getDeathSound()` | 返回 `ModSounds` 中的自定义事件 |
 
-形态相关的 `BossForm` / `BossFormDormant` / `LowHealthTriggered` 三个 NBT 键属于**存档契约**：删掉会导致读档后 Boss 退回普通形态、已退回的 Boss 又自动变身、或濒死效果重复触发。战斗状态字段（`noiseTarget`、`sonicMode` 等）仍然不写 NBT。
+形态相关的 `BossForm` / `BossFormDormant` / `LowHealthTriggered` 三个 NBT 键属于**存档契约**：删掉会导致读档后 Boss 退回普通形态、已退回的 Boss 又自动变身、或濒死效果重复触发。战斗状态字段（`angerByPlayer`、`sonicMode` 等）仍然不写 NBT。
 
-Boss 血条是实例字段 `private final ServerBossBar bossBar`（红色 `PROGRESS`，标题取实体显示名），不进 NBT：存档重新加载时会重新创建并重新分发给追踪者。
+Boss 血条是实例字段 `private final ServerBossBar bossBar`（红色 `PROGRESS`，标题取实体显示名；锁定时变紫并加「（狂暴）」），不进 NBT：存档重新加载时会重新创建并重新分发给追踪者。
 
-状态字段（`noiseTarget`、`guaranteedShots`、`revengeMode`、`sonicMode` 等）全部私有，**不写入 NBT**，不构成存档契约。跨存档/跨版本时不保证行为状态延续。
+状态字段（`angerByPlayer`、`sonicTarget`、`revengeMode`、`sonicMode` 等）全部私有，**不写入 NBT**，不构成存档契约。跨存档/跨版本时不保证行为状态延续。
 
 形态与战斗的粒子效果（`dust_color_transition`、`totem_of_undying`、`firework`、`dust_pillar`）全部在服务端生成，不新增注册项或资源；数量、间隔与判定见 [SPEC §3.6](SPEC.md#36-粒子效果纯表现)。
 
@@ -163,9 +167,7 @@ Boss 血条是实例字段 `private final ServerBossBar bossBar`（红色 `PROGR
 
 | Mixin 类 | 目标类 | 方法（Yarn 签名） | 注入点 | 作用 |
 | --- | --- | --- | --- | --- |
-| `PlayerSoundMixin` | `PlayerEntity` | `playSound(Lnet/minecraft/sound/SoundEvent;FF)V` | `HEAD` | 把玩家音效转给 `onPlayerSound`；两端都会注入，服务端内部过滤 |
-| `PlayerInteractionMixin` | `ServerPlayerInteractionManager` | `tryBreakBlock(Lnet/minecraft/util/math/BlockPos;)Z` | `HEAD` | 挖掘动作记一次 OTHER |
-| `PlayerInteractionMixin` | `ServerPlayerInteractionManager` | `interactBlock(Lnet/minecraft/server/network/ServerPlayerEntity;Lnet/minecraft/world/World;Lnet/minecraft/item/ItemStack;Lnet/minecraft/util/Hand;Lnet/minecraft/util/hit/BlockHitResult;)Lnet/minecraft/util/ActionResult;` | `HEAD` | 方块交互记一次 OTHER |
+| `PlayerSoundMixin` | `PlayerEntity` | `playSound(Lnet/minecraft/sound/SoundEvent;FF)V` | `HEAD` | 把玩家音效转给 `onPlayerSound`，只补没有 GameEvent 的声音；两端都会注入，服务端内部过滤 |
 
 配置契约（`firstmob.mixins.json`）：
 
@@ -174,38 +176,33 @@ Boss 血条是实例字段 `private final ServerBossBar bossBar`（红色 `PROGR
   "required": true,
   "package": "com.example.firstmob.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": ["PlayerSoundMixin", "PlayerInteractionMixin"],
+  "mixins": ["PlayerSoundMixin"],
   "injectors": { "defaultRequire": 1 }
 }
 ```
 
 Loom 1.15 在 `remapJar` 阶段会把方法名重映射为 intermediary，**不需要 refmap**；手写 `"refmap"` 会因文件不存在而报错。
 
+挖掘/交互不再单独挂 mixin，统一由 `GameEvent`（`BLOCK_DESTROY` / `BLOCK_PLACE` / `BLOCK_OPEN` 等）触发。
+
 ## 4. 调用时序
 
 ```
-玩家 playSound(...) ──HEAD──▶ PlayerSoundMixin ──▶ onPlayerSound
-                                                    │ 过滤（客户端/死亡/旁观者/.death/潜行/羊毛）+ 分类
-                                                    ▼
-                                   dispatch：20 格内所有 YaoYongshouEntity
+振动 GameEvent ──▶ VibrationListener ──▶ accepts（记 lastGameEventTicks）
+                                        └▶ accept（按距离延迟；大/小噪音）
                                                     │
-                                                    ▼
-                                   hearSoundFrom：按 UUID 记入 recentLoudSounds
-                                                    │
-玩家动作 ──▶ GameEvent 分发器 ──▶ VibrationListener ──▶ YaoVibrationCallback.accept
-                                                    │（原版按距离延迟 ≤20 tick；只记 OTHER）
-                                                    ▼
-                                   hearVibrationFrom → recentVibrations
-                                                    │
-                                                    ▼
-                                   evaluateNoise：loud = max(两通道)
-                                        │                            │
-                          loud ≥ 9 ─────┘                            └───── loud ≥ 3
-                                ▼                                          ▼
-                        enterSonicMode                          setTarget(player) → 首发 shootAt
+玩家未记录音效 ──▶ PlayerSoundMixin ──▶ onPlayerSound
+                                        │ 2 tick 内有振动标记则跳过
+                                        ▼
+                         hearVibrationFrom / hearSupplement
+                                        │
+                                        ▼
+                     每玩家愤怒：大 +12、小 +5、每 20 tick -1
+                          │                         │
+                     <30 冷静                  30 警觉 / 100 激怒
+                          ▼                         ▼
+                 CuriousLookGoal 看声源      setTarget(prime) / enterSonicMode
 ```
-
-挖掘/交互不走 `playSound`，由 `PlayerInteractionMixin` 直接调用 `onPlayerAction` → `dispatch`（按 OTHER 处理）。
 
 `setTarget` 内部可能同步调用 `shootAt`（首发），因此锁定目标的那一帧就可能生成口水；接入自定义目标逻辑时不要假设"先锁定、下一 tick 才攻击"。
 
@@ -279,7 +276,7 @@ Loom 1.15 在 `remapJar` 阶段会把方法名重映射为 intermediary，**不�
 | 级别 | 内容 | 变更规则 |
 | --- | --- | --- |
 | **稳定** | 实体/物品/伤害类型/音效事件 ID、字幕键、死亡信息键、入口类名、Mixin 配置文件名 | 改名或移除属于破坏性变更，必须升 minor 并在 CHANGELOG 标注 |
-| **实验** | `onPlayerSound` / `onPlayerAction` 静态入口、公开覆写方法的时序、刷怪蛋模型、渲染器、属性与行为数值 | 可以调整，需同步 SPEC/API |
+| **实验** | `onPlayerSound` 静态入口、公开覆写方法的时序、刷怪蛋模型、渲染器、属性与行为数值 | 可以调整，需同步 SPEC/API |
 | **内部** | 私有字段与常量、Goal 组合、日志文案、`DEBUG` 开关 | 可自由改动，不影响外部 |
 
 兼容性说明：
@@ -299,7 +296,7 @@ Loom 1.15 在 `remapJar` 阶段会把方法名重映射为 intermediary，**不�
 
 ### 7.2 调整行为数值
 
-常量都在 `YaoYongshouEntity` 顶部（`SOUND_THRESHOLD`、`SONIC_RANGE` 等），改完后：
+常量都在 `YaoYongshouEntity` 顶部（`ANGER_*`、`SONIC_RANGE` 等），改完后：
 
 1. 更新 [SPEC §6 数值总表](SPEC.md#6-数值总表)。
 2. 按 [SPEC §10 验收用例](SPEC.md#10-验收用例) 回归。

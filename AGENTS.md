@@ -40,11 +40,10 @@ $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 src/main/java/com/example/firstmob
 ├── Firstmob.java                   # 入口：注册实体/物品/音效、加入创造页签
 ├── entity
-│   ├── YaoYongshouEntity.java      # 羊驼行为 + 听觉 + 口水 + 声波 + 反击
+│   ├── YaoYongshouEntity.java      # 羊驼行为 + 振动听觉/愤怒 + 口水 + 声波 + 反击
 │   └── YaoYongshouSpitEntity.java  # 口水：伤害、击退、同类免伤
 ├── mixin
-│   ├── PlayerSoundMixin.java       # 拦 PlayerEntity#playSound
-│   └── PlayerInteractionMixin.java # 挖 / 交互方块也算"弄出动静"
+│   └── PlayerSoundMixin.java       # 拦 PlayerEntity#playSound，只补未记录音效
 └── registry
     ├── ModEntities.java            # 实体类型 + 属性
     ├── ModItems.java               # 刷怪蛋
@@ -60,8 +59,8 @@ docs/                               # SPEC / API / 文档索引
 
 1. `targetSelector` 始终为空；反击只由 `damage()` 计数，不靠 `RevengeGoal`。
 2. 同类永不被 `setTarget` 接受，口水永不伤害同类。
-3. `sonicMode` 为 true 时 `shootAt` 永不生成口水：非 Boss（未锁定）的远程手段只由"5 秒内噪音是否 ≥ 9"决定，与距离无关。
-4. 近战距离内不生成口水（普通 ≤3 格、锁定 ≤5 格）；锁定模式 5~16 格口水、17~40 格声波，蓄力开始后必须先把这一发打完。
+3. `sonicMode` 为 true 时 `shootAt` 永不生成口水：非 Boss（未锁定）的远程手段只由愤怒档位决定——警觉（30）吐口水、激怒（100）放声波。
+4. 近战距离内不生成口水（普通 ≤3 格、锁定 ≤5 格）；锁定模式 5~16 格口水、17~32 格站定声波、>32~40 格边追边声波，蓄力开始后必须先把这一发打完。
 5. 目标死亡当 tick 清空目标与攻击状态（残血锁定模式例外：改锁最近的存活玩家）。
 6. 不存在幼年形态：`isBaby()` false、`getBreedingAge()` 0、`createChild()` null。
 7. 音效事件必须用 `{"type": "event"}` 转发原版事件。
@@ -71,9 +70,12 @@ docs/                               # SPEC / API / 文档索引
 11. Boss 形态退回只在「锁定模式已解除 + 连续 600 tick 无目标」时发生；退回后血量仍 <80% 时必须重新获得目标才再次变身（`bossFormDormant`），不能每 tick 反复进出。
 12. 护甲/韧性每 tick 按形态与血量重算：普通 5/0、Boss 20/0、Boss 且 <20% 血 10/5。
 13. 脱战回血只在玩家 200 tick 未造成伤害且未满血时挂生命恢复 I；满血或被再次打中立即移除，且只移除本机制挂的无限恢复 I。
-14. 锁定模式声波蓄力开始后不许被近战/口水打断，直到开炮；普通噪音声波不受此限。
-15. 听觉判定值 `loud = max(音效通道, 振动通道)`，两条通道不能相加；振动只记 OTHER，脚步/落地/受击仍由音效通道负责。
-16. `Vibrations` 必须在服务端每 tick 调 `Vibrations.Ticker.tick`，并在 `updateEventHandler` 把 `EntityGameEventHandler` 交给回调；少任一步都收不到 GameEvent。
+14. 锁定模式声波蓄力开始后不许被近战/口水打断，直到开炮；激怒声波不受此限。
+15. 听觉只有一个愤怒入口：振动是主来源，音效只补"同一动作没有 GameEvent"的声音（2 tick 配对）；不许再把两条通道分别计数或相加。
+16. 愤怒每玩家独立 0~100、每 20 tick -1；`<30` 冷静、`30~99` 警觉、`100` 激怒；声波进入 100、退出 `<90`。
+17. 好奇只在冷静且无目标时触发：看声源 40 tick、40 tick 冷却；目标/声波/锁定出现立即停止，期间不注视玩家。
+18. Boss 形态强制愤怒 ≥100；锁定后的狂暴只改血条颜色/标题，不改攻速与伤害。
+19. `Vibrations` 必须在服务端每 tick 调 `Vibrations.Ticker.tick`，并在 `updateEventHandler` 把 `EntityGameEventHandler` 交给回调；少任一步都收不到 GameEvent。
 
 完整的判定条件、阈值与验收用例见 [docs/SPEC.md](docs/SPEC.md)。
 
@@ -100,7 +102,7 @@ docs/                               # SPEC / API / 文档索引
 10. **刷怪蛋生成幼体**：两条路径都要堵。①在方块上使用：`PassiveEntity#initialize` 在 `SpawnReason.SPAWN_EGG` 下直接 `setBreedingAge(-24000)`（绕过 `setBaby`），所以要覆盖 `isBaby`/`getBreedingAge`/`setBreedingAge`；②对着实体使用：`MobEntity.interact` 是 final，会走 `interactWithItem` → `SpawnEggItem#spawnBaby` → `createChild`，而 `LlamaEntity#createChild` 造出的是原版小羊驼，必须覆盖成返回 null。只改 `interactMob` 没用。
 11. **反击停不下来**：`LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`（`RevengeGoal` 子类，优先级 1），目标被清空后会拿"上次攻击者"立刻重新锁定（日志表现为 `target X -> null` 紧跟 `target null -> X`）。必须 `targetSelector.clear(goal -> true)`，反击逻辑放 `damage()`。
 12. **最大生命被羊驼随机化**：`LlamaEntity` 生成时经 `AbstractHorseEntity#initialize` 调 `AbstractDonkeyEntity#initAttributes`，把最大生命随机成 15~30，覆盖 `ModEntities` 的 100。必须把 `initAttributes(Random)` 覆盖成空实现，否则 80% / 60% / 20% 血量阈值全部按随机值算。
-13. **振动事件不是同一 tick 到达**：原版 `VibrationListener` 按距离把事件延迟约 `distance` tick 才回调（20 格最多晚 1 秒），不能拿音效和振动的同一 tick 做去重；判定用两条通道各自记窗口、取较大值，也不要直接把两边的次数相加。
+13. **振动事件不是同一 tick 到达**：原版 `VibrationListener` 按距离把事件延迟约 `distance` tick 才回调（20 格最多晚 1 秒），不能拿音效和振动的同一 tick 做去重；音效补充靠 `accepts` 同 tick 标记 + `undoSupplementIfAny` 回滚，事件与音效相隔超过 2 tick 会重复或漏计。
 
 ## 验证流程
 
@@ -114,7 +116,7 @@ docs/                               # SPEC / API / 文档索引
    /give @s firstmob:yao_yongshou_spawn_egg
    ```
 
-4. 按 [docs/SPEC.md 的验收用例](docs/SPEC.md#10-验收用例) 逐条回归，至少覆盖：走路不触发、挖 3 格触发、安静 5 秒停火、25 格放弃、9 次升声波、40 格解除、3 格内只近战、反击 3 次、刷怪蛋不生成幼体。
+4. 按 [docs/SPEC.md 的验收用例](docs/SPEC.md#10-验收用例) 逐条回归，至少覆盖：走路不触发、挖 3 格警觉、安静 8 秒停火、25 格放弃、9 次激怒声波、40 格解除、3 格内只近战、反击 3 次、刷怪蛋不生成幼体、好奇回头、Boss 强制激怒、锁定狂暴表现。
 
 > 测试世界里常残留多只姚永寿（日志会出现多个 `[Yao#id]`），先 `/kill` 再测。
 

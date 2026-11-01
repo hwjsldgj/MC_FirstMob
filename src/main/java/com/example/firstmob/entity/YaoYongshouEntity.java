@@ -1,7 +1,6 @@
 package com.example.firstmob.entity;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -15,6 +14,7 @@ import net.minecraft.block.Blocks;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.ai.goal.Goal;
 import net.minecraft.entity.ai.goal.LookAroundGoal;
 import net.minecraft.entity.ai.goal.LookAtEntityGoal;
 import net.minecraft.entity.ai.goal.MeleeAttackGoal;
@@ -52,6 +52,7 @@ import net.minecraft.registry.tag.TagKey;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundEvent;
+import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
@@ -82,19 +83,28 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** 追击上限：目标跑出 25 格就放弃。 */
 	private static final double MAX_CHASE_RANGE = 25.0D;
 	private static final double MAX_CHASE_RANGE_SQUARED = MAX_CHASE_RANGE * MAX_CHASE_RANGE;
-	/** 计数窗口：只统计最近 5 秒（100 tick）内的声音。 */
-	private static final int SOUND_WINDOW_TICKS = 100;
-	/** 窗口内声音达到这个次数就主动开火（最少 3 次）。 */
-	private static final int SOUND_THRESHOLD = 3;
-	/** 窗口内"非脚步"声音低于这个值就停火（同样以 3 次为准）。 */
-	private static final int RELEASE_SOUND_COUNT = 3;
-	/** 声音分类：走路、跳跃（落地）、受击各自 5 秒只记 1 次；其它声音发生即记 1 次。 */
-	private static final int SOUND_WALK = 0;
-	private static final int SOUND_JUMP = 1;
-	private static final int SOUND_HURT = 2;
-	private static final int SOUND_OTHER = 3;
-	/** "至少攻击一次"的保证：和计数窗口一样只给 5 秒，安静下来就不再死追。 */
-	private static final int GUARANTEE_TIMEOUT_TICKS = 100;
+	/** 脚步 / 落地 / 受击的限频窗口：每类每 5 秒最多算一次真噪音。 */
+	private static final int MINOR_NOISE_COOLDOWN_TICKS = 100;
+	/** 声音分类：脚步、落地、受击是"小噪音"，其余是"大噪音"。 */
+	private static final int NOISE_WALK = 0;
+	private static final int NOISE_JUMP = 1;
+	private static final int NOISE_HURT = 2;
+	private static final int NOISE_LOUD = 3;
+	/** 愤怒值：0~100；30 起警觉（口水），100 满（声波）。 */
+	private static final int ANGER_MAX = 100;
+	private static final int ANGER_AGITATED = 30;
+	private static final int ANGER_ANGRY = 100;
+	/** 声波退出阈值：低于 90 才从激怒回落，避免刚开一炮就掉档。 */
+	private static final int ANGER_ANGRY_EXIT = 90;
+	/** 单次真噪音的愤怒：大噪音 12（3 次≈36），小噪音 5（脚步不轻易激怒）。 */
+	private static final int ANGER_PER_LOUD_NOISE = 12;
+	private static final int ANGER_PER_MINOR_NOISE = 5;
+	/** 每 20 tick 愤怒 -1；3 次大噪音约 7 秒内回落，9 次仍能到满。 */
+	private static final int ANGER_DECAY_INTERVAL_TICKS = 20;
+	/** 好奇：听到声音后看向声源 40 tick，40 tick 内不重复触发。 */
+	private static final int CURIOUS_DURATION_TICKS = 40;
+	/** 音效补充与 GameEvent 的配对窗口：同一次动作的音效和事件间隔不超过 2 tick。 */
+	private static final int SUPPLEMENT_PAIR_TICKS = 2;
 	/** 吐口水冷却：羊驼默认 40 tick，这里减 0.3 秒 = 34 tick。 */
 	private static final int SPIT_COOLDOWN_TICKS = 34;
 	/** 吐口水最大射程（格），与羊驼默认一致。 */
@@ -132,8 +142,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	public static final RegistryKey<DamageType> MELEE_DAMAGE_TYPE =
 			RegistryKey.of(RegistryKeys.DAMAGE_TYPE, Firstmob.id("yao_melee"));
 
-	/** 5 秒内声音"超过 8 次"（即 ≥9 次）就升级成监守者声波。 */
-	private static final int SONIC_SOUND_THRESHOLD = 9;
 	/** 声波模式：目标跑出 40 格才停（比吐口水的 25 格远）。 */
 	private static final double SONIC_RANGE = 40.0D;
 	private static final double SONIC_RANGE_SQUARED = SONIC_RANGE * SONIC_RANGE;
@@ -228,12 +236,20 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final TrackedData<Integer> ATTACK_START_AGE = DataTracker.registerData(YaoYongshouEntity.class,
 			TrackedDataHandlerRegistry.INTEGER);
 
-	/** 每个玩家的全部发声时间（含脚步），用于判断"吵不吵"。 */
-	private final Map<UUID, Deque<Long>> recentSounds = new HashMap<>();
-	/** 每个玩家的"非脚步"发声时间，用于判断还要不要继续打。 */
-	private final Map<UUID, Deque<Long>> recentLoudSounds = new HashMap<>();
-	/** 每个玩家被 GameEvent 振动听到的"非脚步"时间：和音效通道取较大值，不能直接相加。 */
-	private final Map<UUID, Deque<Long>> recentVibrations = new HashMap<>();
+	/** 每个玩家当前的愤怒值（0~90）。 */
+	private final Map<UUID, Integer> angerByPlayer = new HashMap<>();
+	/** 每个玩家最近一次被 GameEvent 命中的 tick：音效只在没有事件配对时作为补充。 */
+	private final Map<UUID, Long> lastGameEventTicks = new HashMap<>();
+	/** 每个玩家最近一次"音效补充"计数的 tick：若 GameEvent 稍后才到，用来回滚这次补充。 */
+	private final Map<UUID, Long> lastSupplementTicks = new HashMap<>();
+	/** 愤怒衰减计时：每 50 tick 全体 -1。 */
+	private int angerDecayTimer;
+	/** 好奇：看向声源的位置与截止 tick。 */
+	private Vec3d curiousPos;
+	private long curiousUntil;
+	private long nextCuriousAllowed;
+	/** 声波模式锁定的玩家；null 表示没有。 */
+	private UUID sonicTarget;
 	/** 监守者式振动监听的待处理状态（距离延迟、当前选中的振动）。 */
 	private final Vibrations.ListenerData vibrationListenerData = new Vibrations.ListenerData();
 	private final Vibrations.Callback vibrationCallback;
@@ -242,12 +258,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private final Map<UUID, Long> lastWalkTicks = new HashMap<>();
 	private final Map<UUID, Long> lastJumpTicks = new HashMap<>();
 	private final Map<UUID, Long> lastHurtTicks = new HashMap<>();
-	/** 当前由"吵闹"触发攻击的目标；null 表示不是声音触发的攻击。 */
-	private UUID noiseTarget;
-	/** 本次触发还欠几次攻击（至少 1 次）。 */
-	private int guaranteedShots;
-	/** 本轮触发的时间，用于保证期超时。 */
-	private long noiseTriggerTime;
 	/** 挨打反击模式：只打回去，计数用完就收手（不无限追）。 */
 	private boolean revengeMode;
 	/** 本轮反击还剩几次攻击。 */
@@ -606,20 +616,17 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 
 	/** 进入锁定模式：清掉声音/反击状态，改由锁定逻辑自己决定打谁、用什么打。 */
 	private void enterLockMode(long now) {
-		if (this.sonicMode) {
-			// 噪音声波是旧机制，锁定后由 updateLockSonic 接管，避免两套状态互相打架
-			this.exitSonicMode(now);
-		}
+		// 噪音声波由 updateLockSonic 接管，避免两套声波状态互相打架
+		this.stopSonicMode();
 		this.lockMode = true;
 		this.lockTarget = null;
 		this.lockSonicTicks = 0;
 		this.nextSpitTick = 0L;
 		this.lastPlayerDamageTick = now;
-		this.noiseTarget = null;
-		this.guaranteedShots = 0;
 		this.revengeMode = false;
 		this.revengeShots = 0;
-		debug("LOCK enter hp={}", this.getHealth());
+		this.curiousUntil = 0L;
+		debug("LOCK enter hp={} BERSERK on", this.getHealth());
 	}
 
 	/** 解除锁定：目标与节拍全部清空，速度由 {@link #updateMovementSpeed()} 在下一 tick 收回。 */
@@ -627,7 +634,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.lockMode = false;
 		this.lockTarget = null;
 		this.lockSonicTicks = 0;
-		debug("LOCK exit hp={}", this.getHealth());
+		debug("LOCK exit BERSERK off");
 		this.setTarget(null);
 	}
 
@@ -1027,6 +1034,16 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			if (percent != this.bossBar.getPercent()) {
 				this.bossBar.setPercent(percent);
 			}
+			// 锁定/狂暴只做表现：血条换紫色并加后缀，不改攻速/伤害
+			Text name = this.lockMode ? Text.literal(this.getDisplayName().getString() + "（狂暴）")
+					: this.getDisplayName();
+			if (!this.bossBar.getName().equals(name)) {
+				this.bossBar.setName(name);
+			}
+			BossBar.Color color = this.lockMode ? BossBar.Color.PURPLE : BossBar.Color.RED;
+			if (this.bossBar.getColor() != color) {
+				this.bossBar.setColor(color);
+			}
 		}
 	}
 
@@ -1067,7 +1084,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 
 	/**
 	 * 玩家每发出一次音效就会调用这里（见 {@code PlayerSoundMixin}）。
-	 * 走路、跳跃（落地）、受击各算一类，5 秒内每类只记 1 次，且都不维持仇恨。
+	 * 只把"原版振动没有记录"的音效当作补充：同一动作的音效和 GameEvent 一般同 tick，
+	 * 已经走过振动通道的声音在 {@link #wasGameEventHeardRecently} 里被排除。
 	 */
 	public static void onPlayerSound(PlayerEntity player, SoundEvent sound) {
 		World world = player.getWorld();
@@ -1079,33 +1097,11 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		if (path.endsWith(".death")) {
 			return;
 		}
-		// 三类声音各自独立限量：5 秒内每类只记 1 次；其它声音发生即记 1 次
-		int kind;
-		if (path.endsWith(".step")) {
-			kind = SOUND_WALK;
-		} else if (path.endsWith(".small_fall") || path.endsWith(".big_fall")) {
-			kind = SOUND_JUMP;
-		} else if (path.endsWith(".hurt")) {
-			kind = SOUND_HURT;
-		} else {
-			kind = SOUND_OTHER;
-		}
-		dispatch(player, kind);
+		dispatchSupplement(player);
 	}
 
-	/** 挖方块、与方块交互这些不走音效通道的动作，直接记一次"巨响"（见 {@code PlayerInteractionMixin}）。 */
-	public static void onPlayerAction(PlayerEntity player) {
-		World world = player.getWorld();
-		if (world.isClient() || !player.isAlive() || player.isSpectator()) {
-			return;
-		}
-		dispatch(player, SOUND_OTHER);
-	}
-
-	/** 把一次"声音"分发给 20 格内的所有姚永寿；潜行时闭嘴，并把羊毛等遮挡物算上。 */
-	private static void dispatch(PlayerEntity player, int kind) {
-		// 原版振动只对 IGNORE_VIBRATIONS_SNEAKING 事件闭嘴；音效兜底也一起闭，
-		// 否则玩家蹲下时音效会绕过监守者规则继续引来姚永寿。
+	/** 把一次"没有对应 GameEvent"的音效分发给 20 格内的所有姚永寿。 */
+	private static void dispatchSupplement(PlayerEntity player) {
 		if (player.bypassesSteppingEffects()) {
 			return;
 		}
@@ -1114,101 +1110,190 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		Box area = player.getBoundingBox().expand(HEARING_RANGE);
 		for (YaoYongshouEntity yao : world.getEntitiesByClass(YaoYongshouEntity.class, area,
 				candidate -> candidate.squaredDistanceTo(player) <= HEARING_RANGE_SQUARED)) {
-			// 振动通道自己会检查遮挡；音效兜底没有，这里补上，
-			// 避免一堵羊毛墙只挡振动、不挡声音
 			if (isHearingOccluded(world, from, yao.getEyePos())) {
 				continue;
 			}
-			yao.hearSoundFrom(player, kind);
+			// 同一动作的音效和 GameEvent 一般同 tick 或相邻 tick；已被振动记录的声音不重复算
+			if (yao.wasGameEventHeardRecently(player)) {
+				continue;
+			}
+			yao.hearSupplement(player);
 		}
 	}
 
-	/** 记账：窗口内声音够多就触发；只有"真噪音"才维持仇恨。 */
-	private void hearSoundFrom(PlayerEntity player, int kind) {
-		// 已进入残血锁定：目标由锁定逻辑决定，声音不再改仇恨
+	/** 该玩家最近是否被本实体的振动监听器接收过 GameEvent。 */
+	private boolean wasGameEventHeardRecently(PlayerEntity player) {
+		Long last = this.lastGameEventTicks.get(player.getUuid());
+		return last != null && this.getWorld().getTime() - last.longValue() <= SUPPLEMENT_PAIR_TICKS;
+	}
+
+	/** 音效先到、GameEvent 后到：把刚才那次音效补充的愤怒撤回，避免一次动作算两次。 */
+	private void undoSupplementIfAny(PlayerEntity player, long now) {
+		Long last = this.lastSupplementTicks.remove(player.getUuid());
+		if (last == null || now - last.longValue() > SUPPLEMENT_PAIR_TICKS) {
+			return;
+		}
+		this.angerByPlayer.computeIfPresent(player.getUuid(),
+				(uuid, anger) -> Math.max(0, anger - ANGER_PER_LOUD_NOISE));
+	}
+
+	/** 振动通道：按事件类型分大/小噪音，并记录声源位置供好奇使用。 */
+	private void hearVibrationFrom(PlayerEntity player, int kind, Vec3d pos) {
 		if (this.lockMode) {
 			return;
 		}
-		UUID uuid = player.getUuid();
 		long now = this.getWorld().getTime();
-		boolean loud = kind == SOUND_OTHER;
-		// 走路 / 跳跃 / 受击：同一类在 5 秒窗口内只记 1 次；其它声音每次发生都记
-		if (!loud) {
-			Map<UUID, Long> lastTicks = kind == SOUND_WALK ? this.lastWalkTicks
-					: (kind == SOUND_JUMP ? this.lastJumpTicks : this.lastHurtTicks);
-			Long last = lastTicks.get(uuid);
-			if (last != null && now - last.longValue() < SOUND_WINDOW_TICKS) {
+		if (kind != NOISE_LOUD) {
+			Map<UUID, Long> lastTicks = kind == NOISE_WALK ? this.lastWalkTicks
+					: (kind == NOISE_JUMP ? this.lastJumpTicks : this.lastHurtTicks);
+			Long last = lastTicks.get(player.getUuid());
+			if (last != null && now - last.longValue() < MINOR_NOISE_COOLDOWN_TICKS) {
 				return;
 			}
-			lastTicks.put(uuid, now);
+			lastTicks.put(player.getUuid(), now);
 		}
-
-		record(this.recentSounds, uuid, now);
-		if (loud) {
-			record(this.recentLoudSounds, uuid, now);
-		}
-		this.evaluateNoise(player, uuid, now);
+		this.addAnger(player, kind == NOISE_LOUD ? ANGER_PER_LOUD_NOISE : ANGER_PER_MINOR_NOISE);
+		this.triggerCuriosity(pos, now);
+		this.updateAngerBehavior(now);
 	}
 
-	/**
-	 * 监守者式振动：只记"真噪音"（脚步 / 落地 / 受击由音效通道负责），
-	 * 和音效通道各记一份，判定时取较大值。
-	 */
-	private void hearVibrationFrom(PlayerEntity player) {
+	/** 音效补充：只处理没有 GameEvent 的声音，按大噪音计。 */
+	private void hearSupplement(PlayerEntity player) {
 		if (this.lockMode) {
 			return;
 		}
 		long now = this.getWorld().getTime();
-		record(this.recentVibrations, player.getUuid(), now);
-		this.evaluateNoise(player, player.getUuid(), now);
+		this.lastSupplementTicks.put(player.getUuid(), now);
+		this.addAnger(player, ANGER_PER_LOUD_NOISE);
+		this.triggerCuriosity(Vec3d.ofCenter(player.getBlockPos()), now);
+		this.updateAngerBehavior(now);
 	}
 
-	/**
-	 * 两条听觉通道共用一套判定。
-	 * 同一个动作通常会同时产生音效和 GameEvent（挖方块、放方块、吃喝等），
-	 * 所以计数取两边的较大值而不是相加，避免一次动作被算成两次；
-	 * 只有其中一路能听到的声音（例如没有对应 GameEvent 的自定义音效）也不会丢。
-	 */
-	private void evaluateNoise(PlayerEntity player, UUID uuid, long now) {
-		int loud = this.loudCount(uuid, now);
-		// 5 秒内"非脚步"声音达到 9 次：升级成声波模式，优先于吐口水
-		if (!this.sonicMode && loud >= SONIC_SOUND_THRESHOLD) {
-			this.enterSonicMode(player, now);
+	/** 好奇：冷静时听到声音就看向声源 40 tick，冷却期内不重复触发。 */
+	private void triggerCuriosity(Vec3d pos, long now) {
+		if (this.lockMode || this.sonicMode || this.getTarget() != null) {
 			return;
 		}
-		// 声波模式下不再走吐口水的触发/维持逻辑
+		if (now < this.nextCuriousAllowed) {
+			return;
+		}
+		this.curiousPos = pos;
+		this.curiousUntil = now + CURIOUS_DURATION_TICKS;
+		this.nextCuriousAllowed = now + CURIOUS_DURATION_TICKS;
+	}
+
+	private void addAnger(PlayerEntity player, int amount) {
+		int anger = Math.min(ANGER_MAX, this.getAnger(player) + amount);
+		this.angerByPlayer.put(player.getUuid(), anger);
+	}
+
+	private int getAnger(PlayerEntity player) {
+		return this.angerByPlayer.getOrDefault(player.getUuid(), 0);
+	}
+
+	/** 当前愤怒最高的存活玩家；同分取最近。 */
+	private PlayerEntity getPrimeSuspect() {
+		PlayerEntity best = null;
+		int bestAnger = 0;
+		double bestDistance = Double.MAX_VALUE;
+		for (Map.Entry<UUID, Integer> entry : this.angerByPlayer.entrySet()) {
+			int anger = entry.getValue();
+			if (anger <= 0) {
+				continue;
+			}
+			PlayerEntity player = this.getWorld().getPlayerByUuid(entry.getKey());
+			if (player == null || !player.isAlive() || player.isSpectator()) {
+				continue;
+			}
+			double distance = this.squaredDistanceTo(player);
+			if (anger > bestAnger || (anger == bestAnger && distance < bestDistance)) {
+				best = player;
+				bestAnger = anger;
+				bestDistance = distance;
+			}
+		}
+		return best;
+	}
+
+	/** 每 50 tick 全体愤怒 -1，归零的条目移除。 */
+	private void decayAnger(long now) {
+		if (++this.angerDecayTimer < ANGER_DECAY_INTERVAL_TICKS) {
+			return;
+		}
+		this.angerDecayTimer = 0;
+		this.angerByPlayer.entrySet().removeIf(entry -> entry.getValue() <= 1);
+		this.angerByPlayer.replaceAll((uuid, anger) -> anger - 1);
+		this.lastGameEventTicks.entrySet()
+				.removeIf(entry -> now - entry.getValue().longValue() > MINOR_NOISE_COOLDOWN_TICKS);
+		this.lastSupplementTicks.entrySet()
+				.removeIf(entry -> now - entry.getValue().longValue() > MINOR_NOISE_COOLDOWN_TICKS);
+	}
+
+	/** 按最高愤怒决定：警觉吐口水、激怒放声波、冷静收手；Boss 形态强制激怒。 */
+	private void updateAngerBehavior(long now) {
+		if (this.lockMode) {
+			return;
+		}
+		if (this.bossForm) {
+			this.forceBossAnger();
+		}
+		PlayerEntity prime = this.getPrimeSuspect();
+		if (prime == null) {
+			if (this.sonicMode) {
+				this.stopSonicMode();
+			}
+			if (!this.revengeMode) {
+				this.setTarget(null);
+			}
+			return;
+		}
+		int anger = this.getAnger(prime);
+		boolean inSonicRange = this.squaredDistanceTo(prime) <= SONIC_RANGE_SQUARED;
 		if (this.sonicMode) {
-			return;
+			// 声波退出比进入低一档，避免愤怒每 50 tick 掉 1 就立刻断炮
+			if (anger >= ANGER_ANGRY_EXIT && inSonicRange) {
+				if (!prime.getUuid().equals(this.sonicTarget)) {
+					this.sonicTarget = prime.getUuid();
+					this.sonicTicks = 0;
+					this.setTarget(prime);
+				}
+				return;
+			}
+			this.stopSonicMode();
 		}
-		if (uuid.equals(this.noiseTarget)) {
-			// 已经在打他了，只更新计数
-			return;
+		if (anger >= ANGER_ANGRY && inSonicRange) {
+			this.enterSonicMode(prime, now);
+		} else if (anger >= ANGER_AGITATED) {
+			// 激怒时允许追到 40 格，警觉仍按普通 25 格
+			double chaseRange = anger >= ANGER_ANGRY ? SONIC_RANGE_SQUARED : MAX_CHASE_RANGE_SQUARED;
+			if (!this.revengeMode && this.getTarget() != prime
+					&& this.squaredDistanceTo(prime) <= chaseRange) {
+				this.setTarget(prime);
+			}
+		} else {
+			if (!this.revengeMode) {
+				this.setTarget(null);
+			}
 		}
-		if (loud < SOUND_THRESHOLD) {
-			// 只有真实动作声才触发：走路/跳跃/受击记在案，但不会把它叫过来
-			return;
-		}
-		this.noiseTarget = uuid;
-		this.guaranteedShots = 1;
-		this.noiseTriggerTime = now;
-		debug("TRIGGER other={}", loud);
-		// 声音触发的战斗不算"挨打反击"，别被反击计数提前收手
-		this.revengeMode = false;
-		this.revengeShots = 0;
-		// 锁定后交给羊驼自带的 ProjectileAttackGoal：够近就吐口水，太远就先走近
-		this.setTarget(player);
 	}
 
-	/** 窗口内"真噪音"次数：音效与振动两条通道取较大值，不能相加。 */
-	private int loudCount(UUID uuid, long now) {
-		return Math.max(countInWindow(this.recentLoudSounds, uuid, now),
-				countInWindow(this.recentVibrations, uuid, now));
+	/** Boss 形态：当前/最近玩家至少拉到激怒，保证进 Boss 就放声波。 */
+	private void forceBossAnger() {
+		PlayerEntity player = this.getTarget() instanceof PlayerEntity target
+				&& this.squaredDistanceTo(target) <= SONIC_RANGE_SQUARED ? target : this.nearestPlayer();
+		if (player != null && this.getAnger(player) < ANGER_ANGRY) {
+			this.angerByPlayer.put(player.getUuid(), ANGER_ANGRY);
+		}
+	}
+
+	private boolean isCurious(long now) {
+		return now < this.curiousUntil;
 	}
 
 	/**
 	 * 复刻原版 {@code VibrationListener#isOccluded}：沿视线每格采样，
 	 * 碰到羊毛等 {@link BlockTags#OCCLUDES_VIBRATION_SIGNALS} 方块就算被挡住。
-	 * 音效兜底没有 GameEvent 的遮挡检查，这里补上，保证两种声源同一套规则。
+	 * 音效补充没有 GameEvent 的遮挡检查，这里补上，保证两种声源同一套规则。
 	 */
 	private static boolean isHearingOccluded(World world, Vec3d from, Vec3d to) {
 		Vec3d delta = to.subtract(from);
@@ -1224,38 +1309,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			}
 		}
 		return false;
-	}
-
-	private static void record(Map<UUID, Deque<Long>> map, UUID uuid, long now) {
-		Deque<Long> timestamps = map.computeIfAbsent(uuid, key -> new ArrayDeque<>());
-		timestamps.addLast(now);
-		prune(timestamps, now);
-	}
-
-	private static void prune(Deque<Long> timestamps, long now) {
-		while (!timestamps.isEmpty() && now - timestamps.peekFirst() > SOUND_WINDOW_TICKS) {
-			timestamps.removeFirst();
-		}
-	}
-
-	private static int countInWindow(Map<UUID, Deque<Long>> map, UUID uuid, long now) {
-		Deque<Long> timestamps = map.get(uuid);
-		if (timestamps == null) {
-			return 0;
-		}
-		prune(timestamps, now);
-		if (timestamps.isEmpty()) {
-			map.remove(uuid);
-			return 0;
-		}
-		return timestamps.size();
-	}
-
-	private static void pruneOutdated(Map<UUID, Deque<Long>> map, long now) {
-		map.entrySet().removeIf(entry -> {
-			prune(entry.getValue(), now);
-			return entry.getValue().isEmpty();
-		});
 	}
 
 	/** 监守者式振动回调：只接受玩家发出的、原版监听标签内的 GameEvent。 */
@@ -1292,7 +1345,13 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			if (!(source instanceof PlayerEntity player)) {
 				return false;
 			}
-			return !player.isSpectator() && player.isAlive();
+			if (player.isSpectator() || !player.isAlive()) {
+				return false;
+			}
+			// 此刻只是"派发"，accept 会按距离延迟；音效补充靠这个同 tick 标记配对
+			YaoYongshouEntity.this.undoSupplementIfAny(player, world.getTime());
+			YaoYongshouEntity.this.lastGameEventTicks.put(player.getUuid(), world.getTime());
+			return true;
 		}
 
 		@Override
@@ -1304,12 +1363,20 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			if (player.isSpectator() || !player.isAlive()) {
 				return;
 			}
-			// 脚步 / 落地 / 受击在音效通道里已经记过，这里只收"真噪音"，避免双份计数
-			if (event.matches(GameEvent.STEP) || event.matches(GameEvent.HIT_GROUND)
-					|| event.matches(GameEvent.ENTITY_DAMAGE) || event.matches(GameEvent.ENTITY_DIE)) {
+			if (event.matches(GameEvent.ENTITY_DIE)) {
 				return;
 			}
-			YaoYongshouEntity.this.hearVibrationFrom(player);
+			int kind;
+			if (event.matches(GameEvent.STEP)) {
+				kind = NOISE_WALK;
+			} else if (event.matches(GameEvent.HIT_GROUND)) {
+				kind = NOISE_JUMP;
+			} else if (event.matches(GameEvent.ENTITY_DAMAGE)) {
+				kind = NOISE_HURT;
+			} else {
+				kind = NOISE_LOUD;
+			}
+			YaoYongshouEntity.this.hearVibrationFrom(player, kind, Vec3d.ofCenter(pos));
 		}
 	}
 
@@ -1327,6 +1394,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.updateFormState();
 		this.updateBossBar();
 		long now = world.getTime();
+		this.decayAnger(now);
 		if (this.lockMode) {
 			// 锁定模式：安静停火、25 格放弃、反击超时这些脱战规则全部让位
 			this.updateLockMode(now);
@@ -1335,8 +1403,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			LivingEntity currentTarget = this.getTarget();
 			if (currentTarget != null && !currentTarget.isAlive()) {
 				this.setTarget(null);
-				this.noiseTarget = null;
-				this.guaranteedShots = 0;
 				this.revengeMode = false;
 				this.revengeShots = 0;
 			}
@@ -1347,100 +1413,78 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 				this.setAttacker(null);
 				this.setTarget(null);
 			}
+			this.updateAngerBehavior(now);
 			if (this.sonicMode) {
 				this.updateSonicMode(now);
 			} else {
-				// 目标跑出 25 格：直接放弃追击（声波模式另算，见 updateSonicMode）
+				// 目标跑出追击上限：普通 25 格，激怒 40 格（声波模式另算）
 				LivingEntity chaseTarget = this.getTarget();
-				if (chaseTarget instanceof PlayerEntity player
-						&& this.squaredDistanceTo(player) > MAX_CHASE_RANGE_SQUARED) {
-					this.setTarget(null);
-					this.noiseTarget = null;
-					this.guaranteedShots = 0;
+				if (chaseTarget instanceof PlayerEntity player) {
+					double chaseRange = this.getAnger(player) >= ANGER_ANGRY
+							? SONIC_RANGE_SQUARED : MAX_CHASE_RANGE_SQUARED;
+					if (this.squaredDistanceTo(player) > chaseRange) {
+						this.setTarget(null);
+					}
 				}
 			}
-			this.updateNoiseAggro(now);
 			this.updateIdleFollow(now);
 		}
 		this.updateBossFormRevert();
 		this.updateOutOfCombatRegen(now);
 		this.updateMovementSpeed();
 		this.updateSpeedTrailParticles();
-		if (now % 100L == 0L) {
-			pruneOutdated(this.recentSounds, now);
-			pruneOutdated(this.recentLoudSounds, now);
-			pruneOutdated(this.recentVibrations, now);
-		}
+		this.updateCuriosityLook(now);
 	}
 
-	/** 声音触发的攻击：安静下来就停火，但触发后至少要把那一次攻击打完。 */
-	private void updateNoiseAggro(long now) {
-		if (this.noiseTarget == null || this.sonicMode) {
+	/** 好奇：冷静时把视线转向声源；玩家注视由 {@code CalmLookAtEntityGoal} 让位。 */
+	private void updateCuriosityLook(long now) {
+		if (!this.isCurious(now) || this.lockMode || this.sonicMode || this.getTarget() != null
+				|| this.curiousPos == null) {
 			return;
 		}
-		LivingEntity target = this.getTarget();
-		if (!(target instanceof PlayerEntity player) || !player.getUuid().equals(this.noiseTarget)) {
-			// 目标被换成别人或被清空，声音逻辑从这里退出
-			this.noiseTarget = null;
-			this.guaranteedShots = 0;
-			return;
-		}
-		boolean guaranteed = this.guaranteedShots > 0;
-		if (guaranteed && now - this.noiseTriggerTime > GUARANTEE_TIMEOUT_TICKS) {
-			// 被墙挡住 / 追不到，别一直死等
-			this.guaranteedShots = 0;
-			guaranteed = false;
-		}
-		// 判断"吵不吵"只看真噪音：走路/跳跃/受击都不维持仇恨
-		int loud = this.loudCount(this.noiseTarget, now);
-		if (!guaranteed && loud < RELEASE_SOUND_COUNT) {
-			debug("RELEASE other={}", loud);
-			this.setTarget(null);
-			this.noiseTarget = null;
-		}
+		this.getLookControl().lookAt(this.curiousPos.x, this.curiousPos.y, this.curiousPos.z);
 	}
 
 	// ------------------------------------------------------------------
 	// 监守者声波：5 秒内发声超过 8 次时触发，与吐口水互斥
 	// ------------------------------------------------------------------
 
-	/** 升级成声波模式：锁定目标，目标跑到 40 格外或死亡前不解除。 */
+	/** 激怒：进入声波模式，目标跑到 40 格外、死亡或愤怒回落时退出。 */
 	private void enterSonicMode(PlayerEntity player, long now) {
 		this.sonicMode = true;
 		this.sonicTicks = 0;
-		this.noiseTarget = player.getUuid();
-		this.noiseTriggerTime = now;
-		this.guaranteedShots = 0;
+		this.sonicTarget = player.getUuid();
 		this.revengeMode = false;
 		this.revengeShots = 0;
-		debug("SONIC enter other={}", this.loudCount(player.getUuid(), now));
+		debug("SONIC enter anger={}", this.getAnger(player));
 		// 这里会立即转向；shootAt 在声波模式下直接返回，不会顺手吐口水
 		this.setTarget(player);
 	}
 
-	/** 退出声波模式，并清掉这名玩家的声音记录，避免刚出 40 格又被旧记录拉回去。 */
-	private void exitSonicMode(long now) {
-		// 用记录的 UUID 清账，避免目标被临时抢走时清错人
-		if (this.noiseTarget != null) {
-			this.recentSounds.remove(this.noiseTarget);
-			this.recentLoudSounds.remove(this.noiseTarget);
-			this.recentVibrations.remove(this.noiseTarget);
+	/** 退出声波模式但不立即改目标：愤怒回落到警觉时仍要继续吐口水。 */
+	private void stopSonicMode() {
+		if (!this.sonicMode) {
+			return;
 		}
 		this.sonicMode = false;
 		this.sonicTicks = 0;
+		this.sonicTarget = null;
 		debug("SONIC exit");
-		this.setTarget(null);
-		this.noiseTarget = null;
-		this.guaranteedShots = 0;
 	}
 
 	/** 声波模式下每 tick 走一遍：蓄力 34 tick → 开炮 → 冷却到 160 tick 再来（<20% 血时各缩短 20%）。 */
 	private void updateSonicMode(long now) {
 		// 直接按 UUID 找锁定目标：中途被别的怪抢仇恨也不会退出声波模式
-		PlayerEntity player = this.noiseTarget == null ? null : this.getWorld().getPlayerByUuid(this.noiseTarget);
+		PlayerEntity player = this.sonicTarget == null ? null : this.getWorld().getPlayerByUuid(this.sonicTarget);
 		if (player == null || !player.isAlive() || this.squaredDistanceTo(player) > SONIC_RANGE_SQUARED) {
-			// 只有这两种情况会停：目标死亡（或下线）或离开 40 格
-			this.exitSonicMode(now);
+			// 目标死亡（或下线）或离开 40 格：声波停，目标也放掉
+			this.stopSonicMode();
+			this.setTarget(null);
+			return;
+		}
+		if (!this.bossForm && this.getAnger(player) < ANGER_ANGRY_EXIT) {
+			// 愤怒掉了：回到警觉口水，不继续开炮
+			this.stopSonicMode();
 			return;
 		}
 		if (this.getTarget() != player) {
@@ -1451,7 +1495,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 		this.faceTarget(player);
 		this.sonicTicks++;
-		// 声波模式是"9 次噪音"换来的：除贴身近战外一律用它，不再按 20 格切回口水
+		// 激怒状态下除贴身近战外一律用声波
 		if (this.sonicTicks == this.sonicChargeTicks() && this.squaredDistanceTo(player) > this.meleeRangeSquared()) {
 			this.fireSonicBoom(player);
 		}
@@ -1508,14 +1552,16 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		// 立刻把"上次攻击者"重新锁回来，导致反击永远停不下来；反击统一由 damage() 自己处理
 		this.targetSelector.clear(goal -> true);
 		this.goalSelector.add(0, new SwimGoal(this));
+		// 好奇：冷静时只转头看声源，优先于看人/张望
+		this.goalSelector.add(1, new CuriousLookGoal(this));
 		// 近战放优先级 2：只在 3 格内接管（canStart/shouldContinue 都卡距离），
 		// 被打时能贴脸还手；目标一退出去就立刻把控制权还给远程
 		this.goalSelector.add(2, new CloseMeleeGoal(this, 1.2, true));
 		// 远程：太远就走近，进入射程就停下吐口水；锁定模式的走位/攻击由 updateLockMode 接管
 		this.goalSelector.add(3, new LockAwareProjectileAttackGoal(1.25D, SPIT_COOLDOWN_TICKS, (float) SPIT_RANGE));
 		this.goalSelector.add(6, new IdleWanderGoal(this, 1.0D));
-		this.goalSelector.add(7, new LookAtEntityGoal(this, PlayerEntity.class, 8.0F));
-		this.goalSelector.add(8, new LookAroundGoal(this));
+		this.goalSelector.add(7, new CalmLookAtEntityGoal(this));
+		this.goalSelector.add(8, new CalmLookAroundGoal(this));
 	}
 
 	// ------------------------------------------------------------------
@@ -1605,6 +1651,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 				if (living instanceof PlayerEntity player) {
 					// 解锁判据是"玩家造成的伤害"，非玩家打的不刷新这个时间
 					this.lastPlayerDamageTick = this.getWorld().getTime();
+					this.addAnger(player, ANGER_PER_LOUD_NOISE);
 					if (this.lockMode) {
 						// 锁定期间谁打就先咬谁，而且没有还手次数上限
 						this.lockTarget = player.getUuid();
@@ -1622,19 +1669,17 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 					}
 					if (living instanceof PlayerEntity player) {
 						// 换了个玩家贴脸打：声波跟着换目标，不中断
-						this.noiseTarget = player.getUuid();
+						this.angerByPlayer.put(player.getUuid(), ANGER_ANGRY);
+						this.sonicTarget = player.getUuid();
 						this.sonicTicks = 0;
-						this.guaranteedShots = 0;
 						this.setTarget(living);
 						return damaged;
 					}
 					// 非玩家打进来：声波模式结束，回到普通反击
-					this.exitSonicMode(this.getWorld().getTime());
+					this.stopSonicMode();
 				}
 				// 挨打引发的仇恨交给原版反击逻辑处理，不再受"安静就停火"的约束；
 				// 但反击有上限：每次挨打最多还手 3 次，打完就收手
-				this.noiseTarget = null;
-				this.guaranteedShots = 0;
 				this.revengeMode = true;
 				this.revengeShots = REVENGE_SHOT_LIMIT;
 				this.revengeDeadline = this.getWorld().getTime() + REVENGE_TIMEOUT_TICKS;
@@ -1656,8 +1701,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			return;
 		}
 		// 冷却由调用方控制：普通模式靠 ProjectileAttackGoal，锁定模式靠 nextSpitTick
-		debug("SHOOT dist={} rev={}/{} guar={}", (int) this.squaredDistanceTo(target),
-				this.revengeMode, this.revengeShots, this.guaranteedShots);
+		debug("SHOOT dist={} rev={}/{}", (int) this.squaredDistanceTo(target),
+				this.revengeMode, this.revengeShots);
 		double dx = target.getX() - this.getX();
 		double dz = target.getZ() - this.getZ();
 		double horizontal = Math.sqrt(dx * dx + dz * dz);
@@ -1681,11 +1726,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 				ModSounds.YAO_SPIT, net.minecraft.sound.SoundCategory.NEUTRAL, 1.0F, 1.0F);
 		world.spawnEntity(spit);
 
-		// 本轮"至少攻击一次"已兑现
-		if (this.guaranteedShots > 0 && this.getTarget() instanceof PlayerEntity player
-				&& player.getUuid().equals(this.noiseTarget)) {
-			this.guaranteedShots--;
-		}
 		this.countRevengeShot();
 	}
 
@@ -1736,13 +1776,79 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			debug("MELEE hit type={} dist2={}", target.getType(), (int) this.squaredDistanceTo(target));
 		}
 		if (hit) {
-			if (this.guaranteedShots > 0 && target instanceof PlayerEntity player
-					&& player.getUuid().equals(this.noiseTarget)) {
-				this.guaranteedShots--;
-			}
 			this.countRevengeShot();
 		}
 		return hit;
+	}
+
+	/** 好奇：冷静时只转头看声源；期间把玩家注视/随机张望让开。 */
+	private static class CuriousLookGoal extends Goal {
+		private final YaoYongshouEntity yao;
+
+		CuriousLookGoal(YaoYongshouEntity yao) {
+			this.yao = yao;
+			this.setControls(EnumSet.of(Goal.Control.LOOK));
+		}
+
+		@Override
+		public boolean canStart() {
+			return this.shouldLook();
+		}
+
+		@Override
+		public boolean shouldContinue() {
+			return this.shouldLook();
+		}
+
+		private boolean shouldLook() {
+			return !this.yao.lockMode && !this.yao.sonicMode && this.yao.getTarget() == null
+					&& this.yao.curiousPos != null
+					&& this.yao.isCurious(this.yao.getWorld().getTime());
+		}
+
+		@Override
+		public void tick() {
+			this.yao.getLookControl().lookAt(this.yao.curiousPos.x, this.yao.curiousPos.y,
+					this.yao.curiousPos.z);
+		}
+	}
+
+	private static class CalmLookAtEntityGoal extends LookAtEntityGoal {
+		private final YaoYongshouEntity yao;
+
+		CalmLookAtEntityGoal(YaoYongshouEntity yao) {
+			super(yao, PlayerEntity.class, 8.0F);
+			this.yao = yao;
+		}
+
+		@Override
+		public boolean canStart() {
+			return !this.yao.isCurious(this.yao.getWorld().getTime()) && super.canStart();
+		}
+
+		@Override
+		public boolean shouldContinue() {
+			return !this.yao.isCurious(this.yao.getWorld().getTime()) && super.shouldContinue();
+		}
+	}
+
+	private static class CalmLookAroundGoal extends LookAroundGoal {
+		private final YaoYongshouEntity yao;
+
+		CalmLookAroundGoal(YaoYongshouEntity yao) {
+			super(yao);
+			this.yao = yao;
+		}
+
+		@Override
+		public boolean canStart() {
+			return !this.yao.isCurious(this.yao.getWorld().getTime()) && super.canStart();
+		}
+
+		@Override
+		public boolean shouldContinue() {
+			return !this.yao.isCurious(this.yao.getWorld().getTime()) && super.shouldContinue();
+		}
 	}
 
 	/** 只在贴身距离才触发的近战：优先级 2，进出都由距离把关，不会压制远程吐口水。 */

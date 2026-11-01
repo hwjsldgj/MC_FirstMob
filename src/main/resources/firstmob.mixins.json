@@ -3,8 +3,7 @@
 	"package": "com.example.firstmob.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
-		"PlayerSoundMixin",
-		"PlayerInteractionMixin"
+		"PlayerSoundMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
