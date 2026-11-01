@@ -80,7 +80,7 @@ public class Firstmob implements ModInitializer {
 
 | 方法 | 签名 | 契约 |
 | --- | --- | --- |
-| `tick` | `public void tick()` | 服务端先推进 `Vibrations.Ticker.tick`，再负责愤怒衰减/档位、好奇、目标死亡脱战、反击超时、声波推进 |
+| `tick` | `public void tick()` | 服务端先推进 `Vibrations.Ticker.tick`，再负责愤怒衰减/档位、Boss 硬锁、好奇、目标死亡脱战、反击超时、声波推进 |
 | `setTarget` | `public void setTarget(LivingEntity target)` | 目标是同类时直接忽略；锁定新目标瞬间尝试首发（见 SPEC §5.2） |
 | `damage` | `public boolean damage(DamageSource source, float amount)` | 结算成功后接管反击/声波换目标，并给攻击者加愤怒；返回父类结果 |
 | `shootAt` | `public void shootAt(LivingEntity target, float pullProgress)` | 客户端、`sonicMode`（激怒声波替代口水）、近战距离内（3 / 5 格）直接返回；发射口水并扣反击计数 |
@@ -103,8 +103,9 @@ public class Firstmob implements ModInitializer {
 | `updateMovementSpeed` / `setSpeedLevel`（私有） | 每 tick 一次 | 游走速度 III（amplifier 2）、战斗追击速度 II、其余按 Boss 形态速度 I 或普通形态无加速 |
 | `updateFormAttributes` / `updateBossFormRevert`（私有） | 每 tick 一次 | 护甲/韧性按形态与血量重算：普通 5/0、Boss 20/0、Boss 且 <20% 血 10/5；Boss 形态（非锁定）连续 600 tick 无目标时退回普通形态 |
 | `updateOutOfCombatRegen`（私有） | 每 tick 一次 | 玩家连续 200 tick 未造成伤害且未满血时挂生命恢复 I（无限时长），满血或再次被打中立即移除；只移除本机制挂的无限恢复 I |
-| `hearVibrationFrom` / `hearSupplement`（私有） | 振动回调与音效补充共用 | 加愤怒并触发好奇；小噪音按行走/落地/受击 5 秒限频，大噪音不限 |
-| `updateAngerBehavior`（私有） | 每次听觉事件与每 tick | 每玩家 0~100；`<30` 冷静、`30~99` 警觉、`100` 激怒；声波进入 100、退出 `<90`；Boss 强制 100 |
+| `updateAngerBehavior`（私有） | 每次听觉事件与每 tick | 每玩家 0~100；`<30` 冷静、`30~99` 警觉、`100` 激怒；声波进入 100、退出 `<90` |
+| `updateBossLock`（私有） | Boss 形态每 tick | Boss 完全不参与愤怒/声音：当前或最近玩家始终锁定；40 格内声波，之外继续追击 |
+| `hearVibrationFrom` / `hearSupplement`（私有） | 振动回调与音效补充共用 | 锁定或 Boss 形态直接忽略；小噪音按行走/落地/受击 5 秒限频，大噪音不限 |
 | `getPrimeSuspect`（私有） | 每次档位判定 | 愤怒最高的存活玩家，同分取最近 |
 | `triggerCuriosity` / `updateCuriosityLook`（私有） | 冷静时听声 | 记录声源并转向 40 tick，40 tick 冷却；目标/声波/锁定出现即停止 |
 | `isHearingOccluded`（私有静态） | 音效补充分发前 | 沿视线每格采样 `BlockTags.OCCLUDES_VIBRATION_SIGNALS`，与振动共用羊毛规则 |

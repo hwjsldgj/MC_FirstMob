@@ -179,7 +179,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final int BOSS_FORM_REVERT_TICKS = 600;
 	/** 濒死阈值：低于 20% 触发附魔金苹果效果（每次下穿阈值触发一次）。 */
 	private static final float LOW_HEALTH_RATIO = 0.2F;
-	/** 伤害吸收 III，2 分钟（现版效果）。 */
+	/** 伤害吸收 II，2 分钟（现版效果下调一档）。 */
 	private static final int LOW_HEALTH_ABSORPTION_TICKS = 2400;
 	/** 生命恢复 II，30 秒（取 1.8 老版更长的时长）。 */
 	private static final int LOW_HEALTH_REGEN_TICKS = 600;
@@ -399,6 +399,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.bossForm = true;
 		this.bossFormDormant = false;
 		this.noTargetTicks = 0;
+		this.curiousUntil = 0L;
 		this.setBaseAttribute(EntityAttributes.GENERIC_SCALE, BOSS_SCALE);
 		this.applyBossBuffs();
 		this.updateFormAttributes(this.getHealth() / this.getMaxHealth());
@@ -422,6 +423,10 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		// 退回只发生在 ≥60% 血（锁定模式不会退），此时不会有金苹果的抗性在跑
 		this.removeStatusEffect(StatusEffects.STRENGTH);
 		this.removeStatusEffect(StatusEffects.RESISTANCE);
+		// Boss 期间强制的满愤怒不带到普通形态，避免一退回就接着放声波
+		this.angerByPlayer.clear();
+		this.lastGameEventTicks.clear();
+		this.lastSupplementTicks.clear();
 		this.bossBar.setVisible(false);
 		debug("BOSS form exit hp={} armor={} toughness={}", this.getHealth(),
 				this.getAttributeValue(EntityAttributes.GENERIC_ARMOR),
@@ -509,9 +514,9 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 				false, false, true));
 	}
 
-	/** 附魔金苹果：1.8 老版（吸收 I）与 1.9+ 现版（吸收 III + 抗性 + 抗火）合并，恢复 II 取老版 30 秒。 */
+	/** 附魔金苹果：1.8 老版（吸收 I）与 1.9+ 现版（吸收 II + 抗性 + 抗火）合并，恢复 II 取老版 30 秒。 */
 	private void applyLowHealthEffects() {
-		this.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, LOW_HEALTH_ABSORPTION_TICKS, 2,
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, LOW_HEALTH_ABSORPTION_TICKS, 1,
 				false, true, true));
 		this.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, LOW_HEALTH_REGEN_TICKS, 1,
 				false, true, true));
@@ -771,7 +776,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 
 	/** 空闲（无目标、未锁定）时维持 ≥16 格站距：20 格内注视，>20 靠近，<16 后退，>36 传送。 */
 	private void updateIdleFollow(long now) {
-		if (this.lockMode || this.getTarget() != null) {
+		if (this.lockMode || this.bossForm || this.getTarget() != null) {
 			return;
 		}
 		PlayerEntity player = this.nearestPlayer();
@@ -1110,6 +1115,9 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		Box area = player.getBoundingBox().expand(HEARING_RANGE);
 		for (YaoYongshouEntity yao : world.getEntitiesByClass(YaoYongshouEntity.class, area,
 				candidate -> candidate.squaredDistanceTo(player) <= HEARING_RANGE_SQUARED)) {
+			if (yao.bossForm) {
+				continue;
+			}
 			if (isHearingOccluded(world, from, yao.getEyePos())) {
 				continue;
 			}
@@ -1139,7 +1147,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 
 	/** 振动通道：按事件类型分大/小噪音，并记录声源位置供好奇使用。 */
 	private void hearVibrationFrom(PlayerEntity player, int kind, Vec3d pos) {
-		if (this.lockMode) {
+		if (this.lockMode || this.bossForm) {
 			return;
 		}
 		long now = this.getWorld().getTime();
@@ -1159,7 +1167,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 
 	/** 音效补充：只处理没有 GameEvent 的声音，按大噪音计。 */
 	private void hearSupplement(PlayerEntity player) {
-		if (this.lockMode) {
+		if (this.lockMode || this.bossForm) {
 			return;
 		}
 		long now = this.getWorld().getTime();
@@ -1229,13 +1237,14 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 				.removeIf(entry -> now - entry.getValue().longValue() > MINOR_NOISE_COOLDOWN_TICKS);
 	}
 
-	/** 按最高愤怒决定：警觉吐口水、激怒放声波、冷静收手；Boss 形态强制激怒。 */
+	/** 按最高愤怒决定：警觉吐口水、激怒放声波、冷静收手；Boss 形态完全锁玩家。 */
 	private void updateAngerBehavior(long now) {
 		if (this.lockMode) {
 			return;
 		}
 		if (this.bossForm) {
-			this.forceBossAnger();
+			this.updateBossLock(now);
+			return;
 		}
 		PlayerEntity prime = this.getPrimeSuspect();
 		if (prime == null) {
@@ -1250,7 +1259,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		int anger = this.getAnger(prime);
 		boolean inSonicRange = this.squaredDistanceTo(prime) <= SONIC_RANGE_SQUARED;
 		if (this.sonicMode) {
-			// 声波退出比进入低一档，避免愤怒每 50 tick 掉 1 就立刻断炮
+			// 声波退出比进入低一档，避免刚开一炮就掉档
 			if (anger >= ANGER_ANGRY_EXIT && inSonicRange) {
 				if (!prime.getUuid().equals(this.sonicTarget)) {
 					this.sonicTarget = prime.getUuid();
@@ -1277,12 +1286,36 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 	}
 
-	/** Boss 形态：当前/最近玩家至少拉到激怒，保证进 Boss 就放声波。 */
-	private void forceBossAnger() {
-		PlayerEntity player = this.getTarget() instanceof PlayerEntity target
-				&& this.squaredDistanceTo(target) <= SONIC_RANGE_SQUARED ? target : this.nearestPlayer();
-		if (player != null && this.getAnger(player) < ANGER_ANGRY) {
-			this.angerByPlayer.put(player.getUuid(), ANGER_ANGRY);
+	/** Boss 形态：不再听声音，当前/最近玩家始终是目标；40 格内放声波，之外继续追击。 */
+	private void updateBossLock(long now) {
+		PlayerEntity target = this.getTarget() instanceof PlayerEntity player && player.isAlive()
+				? player : this.nearestPlayer();
+		if (target == null) {
+			this.stopSonicMode();
+			this.setTarget(null);
+			return;
+		}
+		// 用满愤怒维持声波档位，但 Boss 的“激怒”不依赖声音，也不走娱乐衰减
+		this.angerByPlayer.put(target.getUuid(), ANGER_ANGRY);
+		this.revengeMode = false;
+		this.revengeShots = 0;
+		if (this.squaredDistanceTo(target) <= SONIC_RANGE_SQUARED) {
+			if (!this.sonicMode) {
+				this.enterSonicMode(target, now);
+			} else if (!target.getUuid().equals(this.sonicTarget)) {
+				this.sonicTarget = target.getUuid();
+				this.sonicTicks = 0;
+				this.setTarget(target);
+			} else if (this.getTarget() != target) {
+				this.setTarget(target);
+			}
+		} else {
+			if (this.sonicMode) {
+				this.stopSonicMode();
+			}
+			if (this.getTarget() != target) {
+				this.setTarget(target);
+			}
 		}
 	}
 
@@ -1334,7 +1367,9 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		@Override
 		public boolean accepts(ServerWorld world, BlockPos pos, RegistryEntry<GameEvent> event,
 				GameEvent.Emitter emitter) {
-			if (YaoYongshouEntity.this.isAiDisabled() || YaoYongshouEntity.this.isDead()) {
+			if (YaoYongshouEntity.this.isAiDisabled() || YaoYongshouEntity.this.isDead()
+					|| YaoYongshouEntity.this.bossForm) {
+				// Boss 阶段完全不听声音：连配对标记都不记，避免影响下一次普通形态
 				return false;
 			}
 			if (!world.getWorldBorder().contains(pos)) {
@@ -1420,9 +1455,9 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			if (this.sonicMode) {
 				this.updateSonicMode(now);
 			} else {
-				// 目标跑出追击上限：普通 25 格，激怒 40 格（声波模式另算）
+				// 目标跑出追击上限：普通 25 格，激怒 40 格；Boss 形态完全锁定，不因距离放手
 				LivingEntity chaseTarget = this.getTarget();
-				if (chaseTarget instanceof PlayerEntity player) {
+				if (!this.bossForm && chaseTarget instanceof PlayerEntity player) {
 					double chaseRange = this.getAnger(player) >= ANGER_ANGRY
 							? SONIC_RANGE_SQUARED : MAX_CHASE_RANGE_SQUARED;
 					if (this.squaredDistanceTo(player) > chaseRange) {
@@ -1480,9 +1515,11 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		// 直接按 UUID 找锁定目标：中途被别的怪抢仇恨也不会退出声波模式
 		PlayerEntity player = this.sonicTarget == null ? null : this.getWorld().getPlayerByUuid(this.sonicTarget);
 		if (player == null || !player.isAlive() || this.squaredDistanceTo(player) > SONIC_RANGE_SQUARED) {
-			// 目标死亡（或下线）或离开 40 格：声波停，目标也放掉
+			// 非 Boss 时目标死亡/出 40 格就放掉；Boss 保留目标继续追
 			this.stopSonicMode();
-			this.setTarget(null);
+			if (!this.bossForm) {
+				this.setTarget(null);
+			}
 			return;
 		}
 		if (!this.bossForm && this.getAnger(player) < ANGER_ANGRY_EXIT) {
