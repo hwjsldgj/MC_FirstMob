@@ -197,7 +197,7 @@
 两条通道共用同一套规则：
 
 - **羊毛**：沿视线每格采样，遇到 `BlockTags.OCCLUDES_VIBRATION_SIGNALS`（羊毛）即视为被挡住，振动与音效都听不到。
-- **潜行**：玩家 `bypassesSteppingEffects()`（潜行）时音效通道完全闭嘴；振动只保留 `WARDEN_CAN_LISTEN` 中不属于 `IGNORE_VIBRATIONS_SNEAKING` 的事件。因此潜行走路、落地、游泳、射箭不算，挖方块、放方块、开关容器、吃喝、受伤仍能引来。
+- **潜行**：玩家 `bypassesSteppingEffects()`（潜行）时音效通道完全闭嘴；振动只保留 `WARDEN_CAN_LISTEN` 中不属于 `IGNORE_VIBRATIONS_SNEAKING` 的事件。因此潜行走路、落地、游泳、射箭不算，挖方块、放方块、开关容器、吃喝仍能引来。
 - 旁观者、死亡玩家、客户端世界一律忽略。
 
 ### 4.5 判定
