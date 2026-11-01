@@ -21,7 +21,7 @@
 
 | 注册表 | ID | Java 常量 | 说明 |
 | --- | --- | --- | --- |
-| `Registries.ENTITY_TYPE` | `firstmob:yao_yongshou` | `ModEntities.YAO_YONGSHOU` | 生成组 `MISC`，碰撞箱 0.6 × 1.95（Boss 形态缩放 2 倍后 1.2 × 3.9），眼高 1.62，追踪范围 10；默认属性：`max_health = 100`、`scale = 1`、`armor = 5`、`armor_toughness = 0`（Boss 形态运行时改为 `scale = 2`、`armor = 20`；Boss 且 <20% 血时 10/10） |
+| `Registries.ENTITY_TYPE` | `firstmob:yao_yongshou` | `ModEntities.YAO_YONGSHOU` | 生成组 `MISC`，碰撞箱 0.6 × 1.95（Boss 形态缩放 2 倍后 1.2 × 3.9），眼高 1.62，追踪范围 10；默认属性：`max_health = 100`、`scale = 1`、`armor = 5`、`armor_toughness = 0`（Boss 形态运行时改为 `scale = 2`、`armor = 20`；Boss 且 <20% 血时 10/5） |
 | `Registries.ITEM` | `firstmob:yao_yongshou_spawn_egg` | `ModItems.YAO_YONGSHOU_SPAWN_EGG` | `SpawnEggItem`，蛋色 `0x8A6D3B` / `0x5C4033`，进「刷怪蛋」创造页签 |
 
 ### 2.2 音效事件
@@ -98,7 +98,8 @@ public class Firstmob implements ModInitializer {
 | `updateIdleFollow`（私有） | 每 tick 一次（仅 `IDLE`） | 20 格内 `lookAt`、>32 格靠近、16~32 格站定不动、<16 格后退、>48 格调用 `tryTeleport` |
 | `IdleWanderGoal`（私有内部类） | `WanderAroundFarGoal` 子类 | 玩家在 16~32 格内时 `canStart` / `shouldContinue` 返回 false，保证"合适距离内只站着看人" |
 | `updateMovementSpeed` / `setSpeedLevel`（私有） | 每 tick 一次 | 游走速度 III（amplifier 2）、战斗追击速度 II、其余按 Boss 形态速度 I 或普通形态无加速 |
-| `updateFormAttributes` / `updateBossFormRevert`（私有） | 每 tick 一次 | 护甲/韧性按形态与血量重算：普通 5/0、Boss 20/0、Boss 且 <20% 血 10/10；Boss 形态（非锁定）连续 600 tick 无目标时退回普通形态 |
+| `updateFormAttributes` / `updateBossFormRevert`（私有） | 每 tick 一次 | 护甲/韧性按形态与血量重算：普通 5/0、Boss 20/0、Boss 且 <20% 血 10/5；Boss 形态（非锁定）连续 600 tick 无目标时退回普通形态 |
+| `updateOutOfCombatRegen`（私有） | 每 tick 一次 | 玩家连续 200 tick 未造成伤害且未满血时挂生命恢复 I（无限时长），满血或再次被打中立即移除；只移除本机制挂的无限恢复 I |
 | `teleportNearPlayer`（私有） | 每次最多 6 个随机落点 | 相对玩家朝向随机偏 35°~145°（左右随机、**不含正前方**）、半径 18~22 格，落点要求 3×3×4 空地 |
 | `teleportFarFromPlayer`（私有） | 玩家周围无落点时的退路 | 任意方向 48~64 格；之后 `TELEPORT_RETRY_TICKS`（100 tick = 5 秒）再试 |
 | `nearestPlayer`（私有） | 供锁定与空闲跟随共用 | 同世界最近的存活、非旁观玩家 |
@@ -117,7 +118,7 @@ Boss 血条是实例字段 `private final ServerBossBar bossBar`（红色 `PROGR
 
 #### 调试接口
 
-`YaoYongshouEntity` 内私有常量 `DEBUG`（当前为 `true`）控制诊断日志，格式为 `[Yao#<实体 id>] <事件> ...`，事件包括 `TRIGGER`、`RELEASE`、`DAMAGE`、`SHOOT`、`SONIC enter`、`SONIC exit`、`BOSS form enter`、`BOSS form exit`、`FORM`、`LOW`。发布版本前改为 `false` 并重新构建。
+`YaoYongshouEntity` 内私有常量 `DEBUG`（当前为 `true`）控制诊断日志，格式为 `[Yao#<实体 id>] <事件> ...`，事件包括 `TRIGGER`、`RELEASE`、`DAMAGE`、`SHOOT`、`SONIC enter`、`SONIC exit`、`BOSS form enter`、`BOSS form exit`、`FORM`、`LOW`、`REGEN on`、`REGEN off`。发布版本前改为 `false` 并重新构建。
 
 ### 3.3 `YaoYongshouSpitEntity`
 

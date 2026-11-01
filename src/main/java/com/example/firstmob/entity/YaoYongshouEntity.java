@@ -144,14 +144,17 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final double BOSS_ARMOR = 20.0D;
 	/** Boss 形态基础护甲韧性：0；只有低于 20% 血时才拉满。 */
 	private static final double BOSS_ARMOR_TOUGHNESS = 0.0D;
-	/** 濒死护甲：护甲降到 10、韧性升到 10，用低护甲高韧性硬扛单发重击。 */
+	/** 濒死护甲：护甲降到 10、韧性升到 5，用低护甲高韧性硬扛单发重击。 */
 	private static final double LOW_HEALTH_ARMOR = 10.0D;
-	private static final double LOW_HEALTH_ARMOR_TOUGHNESS = 10.0D;
+	private static final double LOW_HEALTH_ARMOR_TOUGHNESS = 5.0D;
+	/** 脱战回血：玩家连续 10 秒（200 tick）没造成伤害，且未满血时挂生命恢复 I。 */
+	private static final int OUT_OF_COMBAT_REGEN_TICKS = 200;
+	private static final int OUT_OF_COMBAT_REGEN_AMPLIFIER = 0;
 	/** 退回普通形态：解除锁定后连续 30 秒（600 tick）没有目标才触发。 */
 	private static final int BOSS_FORM_REVERT_TICKS = 600;
 	/** 濒死阈值：低于 20% 触发附魔金苹果效果（每次下穿阈值触发一次）。 */
 	private static final float LOW_HEALTH_RATIO = 0.2F;
-	/** 伤害吸收 IV，2 分钟（现版效果）。 */
+	/** 伤害吸收 III，2 分钟（现版效果）。 */
 	private static final int LOW_HEALTH_ABSORPTION_TICKS = 2400;
 	/** 生命恢复 II，30 秒（取 1.8 老版更长的时长）。 */
 	private static final int LOW_HEALTH_REGEN_TICKS = 600;
@@ -240,6 +243,8 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private int noTargetTicks;
 	/** 本次"低于 20%"是否已结算过金苹果效果，回血到 20% 以上时复位。 */
 	private boolean lowHealthTriggered;
+	/** 当前是否由脱战回血机制挂着生命恢复 I，用于只移除自己挂的那个效果。 */
+	private boolean outOfCombatRegen;
 	/** 是否处于残血锁定模式：血量 <60% 进入，满血且 30 秒无伤才解除。 */
 	private boolean lockMode;
 	/** 锁定目标：优先最近一次打它的玩家，其次是最近的玩家；null 表示没记住谁打过它。 */
@@ -382,7 +387,48 @@ public class YaoYongshouEntity extends LlamaEntity {
 		}
 	}
 
-	/** 护甲/韧性随形态与血量比例实时重算：普通 5/0；Boss 20/0；Boss 且 <20% 血 10/10。 */
+	/**
+	 * 脱战回血：玩家连续 10 秒（200 tick）没对姚永寿造成伤害，且未满血时挂生命恢复 I，直到回满。
+	 * 再次被玩家打中或回满后立即移除；只移除本机制挂上的那个无限恢复 I，不动金苹果的恢复 II。
+	 */
+	private void updateOutOfCombatRegen(long now) {
+		if (!this.isAlive()) {
+			this.clearOutOfCombatRegen();
+			return;
+		}
+		boolean idle = now - this.lastPlayerDamageTick >= OUT_OF_COMBAT_REGEN_TICKS;
+		boolean need = idle && this.getHealth() < this.getMaxHealth();
+		if (!need) {
+			this.clearOutOfCombatRegen();
+			return;
+		}
+		StatusEffectInstance current = this.getStatusEffect(StatusEffects.REGENERATION);
+		if (current == null) {
+			this.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION,
+					StatusEffectInstance.INFINITE, OUT_OF_COMBAT_REGEN_AMPLIFIER, false, false, true));
+			this.outOfCombatRegen = true;
+			debug("REGEN on hp={}", this.getHealth());
+		} else if (current.getAmplifier() == OUT_OF_COMBAT_REGEN_AMPLIFIER
+				&& current.getDuration() == StatusEffectInstance.INFINITE) {
+			// 读档后补认自己挂的效果，满血/挨打时才能清掉
+			this.outOfCombatRegen = true;
+		}
+	}
+
+	private void clearOutOfCombatRegen() {
+		if (!this.outOfCombatRegen) {
+			return;
+		}
+		this.outOfCombatRegen = false;
+		StatusEffectInstance current = this.getStatusEffect(StatusEffects.REGENERATION);
+		if (current != null && current.getAmplifier() == OUT_OF_COMBAT_REGEN_AMPLIFIER
+				&& current.getDuration() == StatusEffectInstance.INFINITE) {
+			this.removeStatusEffect(StatusEffects.REGENERATION);
+			debug("REGEN off hp={}", this.getHealth());
+		}
+	}
+
+	/** 护甲/韧性随形态与血量比例实时重算：普通 5/0；Boss 20/0；Boss 且 <20% 血 10/5。 */
 	private void updateFormAttributes(float healthRatio) {
 		boolean boss = this.bossForm;
 		boolean lowHealth = boss && healthRatio < LOW_HEALTH_RATIO;
@@ -407,9 +453,9 @@ public class YaoYongshouEntity extends LlamaEntity {
 				false, false, true));
 	}
 
-	/** 附魔金苹果：1.8 老版（吸收 I）与 1.9+ 现版（吸收 IV + 抗性 + 抗火）合并，恢复 II 取老版 30 秒。 */
+	/** 附魔金苹果：1.8 老版（吸收 I）与 1.9+ 现版（吸收 III + 抗性 + 抗火）合并，恢复 II 取老版 30 秒。 */
 	private void applyLowHealthEffects() {
-		this.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, LOW_HEALTH_ABSORPTION_TICKS, 3,
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, LOW_HEALTH_ABSORPTION_TICKS, 2,
 				false, true, true));
 		this.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, LOW_HEALTH_REGEN_TICKS, 1,
 				false, true, true));
@@ -872,6 +918,10 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.bossFormDormant = nbt.getBoolean("BossFormDormant");
 		this.lowHealthTriggered = nbt.getBoolean("LowHealthTriggered");
 		this.noTargetTicks = 0;
+		// 认回读档前挂上的脱战恢复 I，满血/挨打时才能清掉
+		StatusEffectInstance regen = this.getStatusEffect(StatusEffects.REGENERATION);
+		this.outOfCombatRegen = regen != null && regen.getAmplifier() == OUT_OF_COMBAT_REGEN_AMPLIFIER
+				&& regen.getDuration() == StatusEffectInstance.INFINITE;
 		// 速度等级由 updateMovementSpeed 每 tick 按状态重算，读档后置空等它接管
 		this.speedLevel = -1;
 		if (this.bossForm && !this.getWorld().isClient()) {
@@ -1124,6 +1174,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.updateIdleFollow(now);
 		}
 		this.updateBossFormRevert();
+		this.updateOutOfCombatRegen(now);
 		this.updateMovementSpeed();
 		this.updateSpeedTrailParticles();
 		if (now % 100L == 0L) {
