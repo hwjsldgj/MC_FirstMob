@@ -42,6 +42,7 @@
 | 注册表 | ID | Java 常量 | 文件 |
 | --- | --- | --- | --- |
 | `RegistryKeys.DAMAGE_TYPE` | `firstmob:yao_spit` | `YaoYongshouSpitEntity.DAMAGE_TYPE` | `data/firstmob/damage_type/yao_spit.json` |
+| `RegistryKeys.DAMAGE_TYPE` | `firstmob:yao_melee` | `YaoYongshouEntity.MELEE_DAMAGE_TYPE` | `data/firstmob/damage_type/yao_melee.json` |
 
 字段语义见 [§5.2](#52-damage_type)。
 
@@ -82,7 +83,8 @@ public class Firstmob implements ModInitializer {
 | `setTarget` | `public void setTarget(LivingEntity target)` | 目标是同类时直接忽略；锁定新目标瞬间尝试首发（见 SPEC §5.2） |
 | `damage` | `public boolean damage(DamageSource source, float amount)` | 结算成功后接管反击/声波换目标；返回父类结果 |
 | `shootAt` | `public void shootAt(LivingEntity target, float pullProgress)` | 客户端、`sonicMode`（非 Boss 的声波替代口水）、近战距离内（3 / 5 格）直接返回；发射口水并扣反击/保证计数 |
-| `tryAttack` | `public boolean tryAttack(Entity target)` | 命中后记录挥击动画起点、按铁傀儡的方式向上顶目标（`0.4 × (1 - 击退抗性)`），并扣反击/保证计数，返回父类结果 |
+| `tryAttack` | `public boolean tryAttack(Entity target)` | 用 `firstmob:yao_melee`（`scaling: never`）结算 15 点近战伤害，和平难度也生效；挥击动画与尘柱按挥击触发（不依赖伤害是否结算成功），命中后按铁傀儡的方式向上顶目标（`0.4 × (1 - 击退抗性)`）并扣反击/保证计数 |
+| 近战伤害类型 | `public static final RegistryKey<DamageType> MELEE_DAMAGE_TYPE` | `firstmob:yao_melee`，数据文件必须存在；`scaling` 必须为 `never` |
 | `interactMob` | `public ActionResult interactMob(PlayerEntity player, Hand hand)` | 恒返回 `PASS`，拒绝喂食、驯服、上鞍等交互 |
 | `createChild` | `public LlamaEntity createChild(ServerWorld world, PassiveEntity partner)` | 恒返回 `null`，不产生后代 |
 | `canBreedWith` | `public boolean canBreedWith(AnimalEntity other)` | 恒 false |
@@ -109,6 +111,8 @@ public class Firstmob implements ModInitializer {
 Boss 血条是实例字段 `private final ServerBossBar bossBar`（红色 `PROGRESS`，标题取实体显示名），不进 NBT：存档重新加载时会重新创建并重新分发给追踪者。
 
 状态字段（`noiseTarget`、`guaranteedShots`、`revengeMode`、`sonicMode` 等）全部私有，**不写入 NBT**，不构成存档契约。跨存档/跨版本时不保证行为状态延续。
+
+形态与战斗的粒子效果（`dust_color_transition`、`totem_of_undying`、`firework`、`dust_pillar`）全部在服务端生成，不新增注册项或资源；数量、间隔与判定见 [SPEC §3.6](SPEC.md#36-粒子效果纯表现)。
 
 #### 调试接口
 
@@ -213,7 +217,7 @@ Loom 1.15 在 `remapJar` 阶段会把方法名重映射为 intermediary，**不�
 
 ### 5.2 `damage_type`
 
-位置 `data/firstmob/damage_type/yao_spit.json`：
+位置 `data/firstmob/damage_type/yao_spit.json`（口水）与 `yao_melee.json`（近战），字段相同：
 
 ```json
 {
@@ -225,9 +229,9 @@ Loom 1.15 在 `remapJar` 阶段会把方法名重映射为 intermediary，**不�
 
 | 字段 | 值 | 说明 |
 | --- | --- | --- |
-| `message_id` | `yao_spit` | 死亡信息键为 `death.attack.yao_spit`；缺失会显示原始键 |
+| `message_id` | `yao_spit` / `yao_melee` | 死亡信息键为 `death.attack.<message_id>`；缺失会显示原始键 |
 | `exhaustion` | 0.1 | 受击者的饥饿消耗 |
-| `scaling` | `never` | **必须**；否则 `PlayerEntity#damage` 会按难度清零，和平难度下口水无效 |
+| `scaling` | `never` | **必须**；否则 `PlayerEntity#damage` 会按难度清零，和平难度下口水与近战都无效 |
 
 新增伤害类型时同步：`RegistryKey` 常量 → 数据文件 → `lang/*.json` 的 `death.attack.<message_id>`。
 
@@ -241,6 +245,7 @@ Loom 1.15 在 `remapJar` 阶段会把方法名重映射为 intermediary，**不�
 | `item.firstmob.yao_yongshou_spawn_egg` | 姚永寿刷怪蛋 |
 | `subtitles.firstmob.entity.yao_yongshou.*` | 姚永寿：吼叫 / 受伤 / 死亡 / 吐口水 / 蓄力 / 音波尖啸 |
 | `death.attack.yao_spit` | `%1$s 被 %2$s 的口水淹死了` |
+| `death.attack.yao_melee` | `%1$s 被 %2$s 一巴掌拍死了` |
 
 ### 5.4 模型与贴图
 
@@ -308,7 +313,7 @@ Loom 1.15 在 `remapJar` 阶段会把方法名重映射为 intermediary，**不�
 | 日志 `Unable to play empty soundEvent` | `sounds.json` 少了 `"type": "event"`，或事件 ID 写错 |
 | 启动报 `InvalidMixinException` | 目标方法签名随版本变化，或 `firstmob.mixins.json` 未更新 |
 | 反击停不下来 | `targetSelector` 是否被重新加回 `SpitRevengeGoal`；`damage()` 是否还在计数 |
-| 和平难度无伤害 | 伤害类型是否 `scaling: never`；是否用了 `minecraft:sonic_boom`（`always`） |
+| 和平难度无伤害 | 伤害类型是否 `scaling: never`（口水/近战都必须是）；是否用了 `minecraft:sonic_boom`（`always`） |
 | 刷怪蛋有厚度/重影 | 模型是否误加 `item/generated` parent |
 
 诊断日志开关：`YaoYongshouEntity.DEBUG`；日志文件 `run/logs/latest.log`，行首为 `[Yao#<id>]`。

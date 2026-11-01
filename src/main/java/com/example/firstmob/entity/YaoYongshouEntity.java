@@ -6,8 +6,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import com.example.firstmob.Firstmob;
 import com.example.firstmob.registry.ModSounds;
 
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
@@ -23,6 +26,7 @@ import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.boss.BossBar;
 import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.entity.damage.DamageSource;
+import net.minecraft.entity.damage.DamageType;
 import net.minecraft.entity.data.DataTracker;
 import net.minecraft.entity.data.TrackedData;
 import net.minecraft.entity.data.TrackedDataHandlerRegistry;
@@ -35,8 +39,12 @@ import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.particle.BlockStateParticleEffect;
+import net.minecraft.particle.DustColorTransitionParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundEvent;
@@ -49,6 +57,7 @@ import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import org.joml.Vector3f;
 
 /**
  * 姚永寿：只保留僵尸的外形（由渲染器负责），
@@ -97,6 +106,13 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final double MELEE_RANGE_SQUARED = 9.0D;
 	/** 锁定模式的近战距离（5 格）：比普通模式更早贴脸，5 格内不再吐口水。 */
 	private static final double LOCK_MELEE_RANGE_SQUARED = 25.0D;
+	/**
+	 * 近战伤害类型：data/firstmob/damage_type/yao_melee.json。
+	 * <p>`scaling: never` 是必须的——原版 `mob_attack` 在和平难度会被整段清零，
+	 * 而姚永寿的近战必须像口水一样照常生效。
+	 */
+	public static final RegistryKey<DamageType> MELEE_DAMAGE_TYPE =
+			RegistryKey.of(RegistryKeys.DAMAGE_TYPE, Firstmob.id("yao_melee"));
 
 	/** 5 秒内声音"超过 8 次"（即 ≥9 次）就升级成监守者声波。 */
 	private static final int SONIC_SOUND_THRESHOLD = 9;
@@ -127,6 +143,24 @@ public class YaoYongshouEntity extends LlamaEntity {
 	private static final int LOW_HEALTH_REGEN_TICKS = 600;
 	/** 抗性提升 / 抗火，各 5 分钟（现版效果）。 */
 	private static final int LOW_HEALTH_RESISTANCE_TICKS = 6000;
+	/** Boss 变身粒子：熔岩橙 → 暗紫的尘团，2 倍体型下也包得住全身。 */
+	private static final int BOSS_FORM_PARTICLE_COUNT = 80;
+	private static final float BOSS_FORM_PARTICLE_SCALE = 1.5F;
+	private static final double BOSS_FORM_PARTICLE_SPREAD = 1.2D;
+	private static final Vector3f BOSS_FORM_PARTICLE_FROM = new Vector3f(1.0F, 0.3F, 0.0F);
+	private static final Vector3f BOSS_FORM_PARTICLE_TO = new Vector3f(0.35F, 0.0F, 0.5F);
+	/** 濒死粒子：原版不死图腾同款，在身体中心炸开。 */
+	private static final int LOW_HEALTH_PARTICLE_COUNT = 100;
+	private static final double LOW_HEALTH_PARTICLE_HORIZONTAL_SPREAD = 0.6D;
+	private static final double LOW_HEALTH_PARTICLE_VERTICAL_SPREAD = 1.0D;
+	/** 速度拖尾：任何速度等级（I / II / III）走路都撒烟花，每 4 tick 2 颗，避免 2 倍体型下刷屏。 */
+	private static final int SPEED_TRAIL_PARTICLE_INTERVAL_TICKS = 4;
+	private static final int SPEED_TRAIL_PARTICLE_COUNT = 2;
+	/** "在走路"的判据：脚踩地面且水平速度 > 0.05 格/tick。 */
+	private static final double SPEED_TRAIL_MIN_VELOCITY_SQUARED = 0.0025D;
+	/** 近战命中扬尘：贴在目标脚下，贴图取脚下方块。 */
+	private static final int MELEE_DUST_PARTICLE_COUNT = 6;
+	private static final double MELEE_DUST_PARTICLE_SPREAD = 0.35D;
 	/** 残血锁定阈值：血量 <60% 开始死咬玩家，≤20 格吐口水、>20 格放声波。 */
 	private static final float LOCK_HEALTH_RATIO = 0.6F;
 	/** 解除锁定：健康满血且这么久（600 tick = 30 秒）没被玩家打中。 */
@@ -253,6 +287,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 			if (!this.lowHealthTriggered) {
 				this.lowHealthTriggered = true;
 				this.applyLowHealthEffects();
+				this.spawnLowHealthParticles();
 				debug("LOW hp={}", this.getHealth());
 			}
 		} else {
@@ -271,6 +306,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 		this.setBaseAttribute(EntityAttributes.GENERIC_SCALE, BOSS_SCALE);
 		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR, BOSS_ARMOR);
 		this.applyBossBuffs();
+		this.spawnBossFormParticles();
 		debug("BOSS form enter hp={}", this.getHealth());
 	}
 
@@ -299,6 +335,83 @@ public class YaoYongshouEntity extends LlamaEntity {
 			instance.setBaseValue(value);
 			this.calculateDimensions();
 		}
+	}
+
+	// ------------------------------------------------------------------
+	// 粒子效果（纯表现）：变身尘团、濒死图腾、速度拖尾、近战扬尘
+	// 只在服务端生成，由 ServerWorld 广播给追踪者；客户端 tick 提前返回，不会重复生成
+	// ------------------------------------------------------------------
+
+	/** 转 Boss 形态当 tick：熔岩橙 → 暗紫的尘团从身体中心炸开。 */
+	private void spawnBossFormParticles() {
+		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
+			return;
+		}
+		DustColorTransitionParticleEffect effect = new DustColorTransitionParticleEffect(
+				BOSS_FORM_PARTICLE_FROM, BOSS_FORM_PARTICLE_TO, BOSS_FORM_PARTICLE_SCALE);
+		serverWorld.spawnParticles(effect, this.getX(), this.getBodyY(0.5D), this.getZ(),
+				BOSS_FORM_PARTICLE_COUNT, BOSS_FORM_PARTICLE_SPREAD, BOSS_FORM_PARTICLE_SPREAD,
+				BOSS_FORM_PARTICLE_SPREAD, 0.05D);
+	}
+
+	/** 濒死效果结算当 tick：不死图腾粒子在身体中心炸开。 */
+	private void spawnLowHealthParticles() {
+		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
+			return;
+		}
+		serverWorld.spawnParticles(ParticleTypes.TOTEM_OF_UNDYING, this.getX(), this.getBodyY(0.5D), this.getZ(),
+				LOW_HEALTH_PARTICLE_COUNT, LOW_HEALTH_PARTICLE_HORIZONTAL_SPREAD,
+				LOW_HEALTH_PARTICLE_VERTICAL_SPREAD, LOW_HEALTH_PARTICLE_HORIZONTAL_SPREAD, 0.1D);
+	}
+
+	/**
+	 * 有速度效果且在地面走路时在脚下拖烟花。
+	 * <p>速度 I / II / III 都生效（III 是空闲游走的常驻速度）；站着不动（水平速度不够）不拖。
+	 */
+	private void updateSpeedTrailParticles() {
+		if (this.getStatusEffect(StatusEffects.SPEED) == null) {
+			return;
+		}
+		if (this.age % SPEED_TRAIL_PARTICLE_INTERVAL_TICKS != 0) {
+			return;
+		}
+		if (!this.isOnGround()
+				|| this.getVelocity().horizontalLengthSquared() < SPEED_TRAIL_MIN_VELOCITY_SQUARED) {
+			return;
+		}
+		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
+			return;
+		}
+		// 沿身体宽度随机取一点，2 倍体型下也能盖住双脚
+		double offsetX = (this.random.nextDouble() - 0.5D) * this.getWidth();
+		double offsetZ = (this.random.nextDouble() - 0.5D) * this.getWidth();
+		serverWorld.spawnParticles(ParticleTypes.FIREWORK, this.getX() + offsetX, this.getY() + 0.05D,
+				this.getZ() + offsetZ, SPEED_TRAIL_PARTICLE_COUNT, this.getWidth() * 0.1D, 0.02D,
+				this.getWidth() * 0.1D, 0.01D);
+	}
+
+	/** 近战命中：在目标脚下升起一柱尘，贴图取目标脚下方块。 */
+	private void spawnMeleeDustParticles(Entity target) {
+		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
+			return;
+		}
+		BlockPos pos = target.getBlockPos();
+		BlockState state = serverWorld.getBlockState(pos.down());
+		if (isDustPillarInvisible(state)) {
+			state = serverWorld.getBlockState(pos.down(2));
+		}
+		if (isDustPillarInvisible(state)) {
+			state = Blocks.STONE.getDefaultState();
+		}
+		BlockStateParticleEffect effect = new BlockStateParticleEffect(ParticleTypes.DUST_PILLAR, state);
+		serverWorld.spawnParticles(effect, target.getX(), target.getY() + 0.05D, target.getZ(),
+				MELEE_DUST_PARTICLE_COUNT, MELEE_DUST_PARTICLE_SPREAD, 0.05D,
+				MELEE_DUST_PARTICLE_SPREAD, 0.05D);
+	}
+
+	/** dust_pillar 的贴图来自方块模型：空气与流体取不到贴图，会变成空白粒子。 */
+	private static boolean isDustPillarInvisible(BlockState state) {
+		return state.isAir() || !state.getFluidState().isEmpty();
 	}
 
 	// ------------------------------------------------------------------
@@ -913,6 +1026,7 @@ public class YaoYongshouEntity extends LlamaEntity {
 			this.updateIdleFollow(now);
 		}
 		this.updateMovementSpeed();
+		this.updateSpeedTrailParticles();
 		if (now % 100L == 0L) {
 			pruneOutdated(this.recentSounds, now);
 			pruneOutdated(this.recentLoudSounds, now);
@@ -1246,19 +1360,39 @@ public class YaoYongshouEntity extends LlamaEntity {
 		}
 	}
 
-	/** 近战命中同样算"已经攻击过一次"。 */
+	/**
+	 * 近战：伤害走自定义类型 {@link #MELEE_DAMAGE_TYPE}（`scaling: never`），和平难度也生效；
+	 * 挥击动画与脚下扬尘按"挥击发生"触发，不依赖伤害是否结算成功（创造模式 / 0 伤害也能看到动作）。
+	 */
 	@Override
 	public boolean tryAttack(Entity target) {
-		boolean hit = super.tryAttack(target);
-		if (hit) {
-			// 命中瞬间记录 age：客户端按渲染插值算进度，动画从这一 tick 平滑开始
-			this.dataTracker.set(ATTACK_START_AGE, this.age);
+		boolean hit;
+		if (target instanceof LivingEntity livingTarget) {
+			DamageSource source = this.getDamageSources().create(MELEE_DAMAGE_TYPE, this, this);
+			float damage = (float) this.getAttributeValue(EntityAttributes.GENERIC_ATTACK_DAMAGE);
+			hit = livingTarget.damage(source, damage);
+		} else {
+			hit = super.tryAttack(target);
+		}
+		// 命中瞬间记录 age：客户端按渲染插值算进度，动画从这一 tick 平滑开始
+		this.dataTracker.set(ATTACK_START_AGE, this.age);
+		// 命中点的扬尘：dust_pillar 贴在目标脚下，比打在脸上更像"砸出来的"
+		this.spawnMeleeDustParticles(target);
+		if (hit && target instanceof LivingEntity livingTarget) {
 			// 铁傀儡式击退：只往上顶 0.4 × (1 - 击退抗性)，水平方向不额外加（原版 golem 没有 attack_knockback 加成）
-			if (target instanceof LivingEntity living) {
-				double resistance = Math.max(0.0D,
-						1.0D - living.getAttributeValue(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE));
-				living.setVelocity(living.getVelocity().add(0.0D, 0.4D * resistance, 0.0D));
-			}
+			double resistance = Math.max(0.0D,
+					1.0D - livingTarget.getAttributeValue(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE));
+			livingTarget.setVelocity(livingTarget.getVelocity().add(0.0D, 0.4D * resistance, 0.0D));
+		}
+		if (!hit) {
+			// 创造模式等免疫目标会走到这里；和平难度已由自定义伤害类型解决
+			debug("MELEE miss type={} creative={} atk={}", target.getType(),
+					target instanceof PlayerEntity player && player.isCreative(),
+					this.getAttributeValue(EntityAttributes.GENERIC_ATTACK_DAMAGE));
+		} else {
+			debug("MELEE hit type={} dist2={}", target.getType(), (int) this.squaredDistanceTo(target));
+		}
+		if (hit) {
 			if (this.guaranteedShots > 0 && target instanceof PlayerEntity player
 					&& player.getUuid().equals(this.noiseTarget)) {
 				this.guaranteedShots--;

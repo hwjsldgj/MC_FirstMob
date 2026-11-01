@@ -66,7 +66,7 @@ docs/                               # SPEC / API / 文档索引
 6. 不存在幼年形态：`isBaby()` false、`getBreedingAge()` 0、`createChild()` null。
 7. 音效事件必须用 `{"type": "event"}` 转发原版事件。
 8. 刷怪蛋模型不能写 `"parent": "item/generated"`。
-9. 口水伤害类型必须 `scaling: never`。
+9. 口水与近战的伤害类型必须 `scaling: never`。
 10. 反击计数只在 `shootAt` / `tryAttack` 命中时扣减。
 
 完整的判定条件、阈值与验收用例见 [docs/SPEC.md](docs/SPEC.md)。
@@ -82,7 +82,7 @@ docs/                               # SPEC / API / 文档索引
 
 ## 踩过的坑（别改回去）
 
-1. **和平难度伤害**：`PlayerEntity.damage` 会把 `isScaledWithDifficulty()` 的伤害清零，所以口水用自定义伤害类型 `data/firstmob/damage_type/yao_spit.json`，`"scaling": "never"`。
+1. **和平难度伤害**：`PlayerEntity.damage` 会把 `isScaledWithDifficulty()` 的伤害清零，所以口水和近战都用自定义伤害类型（`yao_spit` / `yao_melee`），`"scaling": "never"`；近战的挥击动画与尘柱按挥击触发，不靠 `damage()` 是否返回 true。
 2. **击退方向**：`LivingEntity.takeKnockback(strength, x, z)` 内部会取反，要传「从目标指向攻击者」的向量。
 3. **属性缺失**：羊驼默认没有 `GENERIC_ATTACK_DAMAGE`，近战会崩；`ModEntities` 里补了 `attack_damage=15`（铁傀儡数值）、`attack_knockback=0`，击退靠命中时向上顶 0.4。
 4. **渲染取值**：模型层用 `context.getPart(EntityModelLayers.ZOMBIE)`（64×64 人形骨架），不是 `bakeLayer`；原版 `ZombieEntityModel` / `IronGolemEntityModel` 的泛型绑死在对应实体上，只能借骨架和 `CrossbowPosing`，不能直接实例化。

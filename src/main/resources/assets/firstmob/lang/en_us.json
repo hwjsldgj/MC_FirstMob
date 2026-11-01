@@ -7,5 +7,6 @@
   "subtitles.firstmob.entity.yao_yongshou.spit": "Yao Yongshou spits",
   "subtitles.firstmob.entity.yao_yongshou.sonic_charge": "Yao Yongshou charges",
   "subtitles.firstmob.entity.yao_yongshou.sonic_boom": "Yao Yongshou: Sonic Boom",
-  "death.attack.yao_spit": "%1$s was drowned in %2$s's spit"
+  "death.attack.yao_spit": "%1$s was drowned in %2$s's spit",
+  "death.attack.yao_melee": "%1$s was smacked to death by %2$s"
 }

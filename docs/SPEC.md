@@ -82,8 +82,8 @@
 | 形态 | 进入条件 | 属性 / 表现 |
 | --- | --- | --- |
 | 普通 | 生成时 | 体型 1 倍、护甲 0、无 Boss 血条 |
-| Boss | 血量 < 80% 最大生命（首次） | 体型 2 倍、护甲 20、显示红色 Boss 血条，并获得**永久**速度 I、力量 I |
-| 濒死 | 血量 < 20% 最大生命，且本次是"从 ≥20% 掉到 <20%" | 立即获得附魔金苹果效果，每次下穿阈值触发一次 |
+| Boss | 血量 < 80% 最大生命（首次） | 体型 2 倍、护甲 20、显示红色 Boss 血条，并获得**永久**速度 I、力量 I；进入当 tick 释放一次 `dust_color_transition` 变身粒子（§3.6） |
+| 濒死 | 血量 < 20% 最大生命，且本次是"从 ≥20% 掉到 <20%" | 立即获得附魔金苹果效果，每次下穿阈值触发一次；触发当 tick 释放一次 `totem_of_undying` 粒子（§3.6） |
 
 - Boss 形态**不会退回**，速度/力量也不会消失；回血不撤销任何一项。
 - 阈值用 `getHealth() / getMaxHealth()` 计算，每 tick 在 `tick()` 里判定，最多延迟 1 tick。
@@ -130,6 +130,21 @@
 - 只对**最近的存活玩家**生效；旁观者不参与，玩家死亡/下线时自动跟随下一个最近玩家。
 - 只在 `IDLE` 生效：进入噪音追击、反击或锁定后不传送。
 - 移动速度：**游走时速度 III**；战斗追击速度 II；其余按 Boss 形态速度 I / 普通形态无加速（见 §3.4）。
+
+### 3.6 粒子效果（纯表现）
+
+四类粒子都只在服务端生成（`ServerWorld#spawnParticles`），由服务端广播给追踪者；全部使用 `minecraft:` 原版粒子，不新增注册项或资源文件。
+
+| 触发 | 粒子 | 表现 |
+| --- | --- | --- |
+| 转入 Boss 形态（< 80%，一次性） | `minecraft:dust_color_transition` | 身体中心炸开一团尘，颜色从熔岩橙过渡到暗紫（`scale = 1.5`），`BOSS_FORM_PARTICLE_COUNT = 80` 颗 |
+| 濒死效果结算（< 20%，每次下穿阈值） | `minecraft:totem_of_undying` | 身体中心炸开不死图腾粒子，`LOW_HEALTH_PARTICLE_COUNT = 100` 颗 |
+| 持有速度效果（I / II / III）且在地面水平移动 | `minecraft:firework` | 脚下每 `SPEED_TRAIL_PARTICLE_INTERVAL_TICKS = 4` tick 撒 2 颗；站着不动不触发 |
+| 近战命中 | `minecraft:dust_pillar` | 命中目标脚下升起尘柱，`MELEE_DUST_PARTICLE_COUNT = 6` 颗；贴图取目标脚下方块，空气/流体时退回石头 |
+
+- 变身与濒死只在该事件结算的当 tick 释放一次，不会因为持续低血而反复播放。
+- 速度拖尾只判是否持有速度效果（不限等级），因此空闲游走的常驻速度 III、Boss 形态的永久速度 I 与指令给的速度都生效。
+- `dust_pillar` 必须附带非空气、非流体的方块状态，否则客户端取不到粒子贴图。
 
 ## 4. 听觉
 
@@ -219,7 +234,8 @@
 ### 5.3 近战
 
 - `CloseMeleeGoal`，优先级 2，只在 3 格内接管；`canStart` 与 `shouldContinue` **都**卡 3 格，目标退出后立刻把控制权还给远程。
-- 近战伤害 15（对齐铁傀儡 `GENERIC_ATTACK_DAMAGE`），`GENERIC_ATTACK_KNOCKBACK = 0`；命中后额外把目标向上顶 `0.4 × max(0, 1 - 击退抗性)`，与铁傀儡的击退一致（没有水平加成）。
+- 近战伤害 15（对齐铁傀儡 `GENERIC_ATTACK_DAMAGE`），伤害类型 `firstmob:yao_melee`（`scaling: never`，**和平难度同样生效**，护甲/抗性/盾牌照常结算）；`GENERIC_ATTACK_KNOCKBACK = 0`，命中后额外把目标向上顶 `0.4 × max(0, 1 - 击退抗性)`，与铁傀儡的击退一致（没有水平加成）。
+- 挥击动画与 `dust_pillar` 按**挥击**触发，不要求伤害结算成功：创造模式等免疫目标时只播放动作与粒子、不结算伤害（调试时也能看到近战了）。
 - `tryAttack` 命中后同样兑换保证攻击、扣反击计数。
 - 声波模式期间近战**照常**可用（只有远程被禁）。
 
@@ -313,6 +329,12 @@
 | `ATTACK_BOOST_COOLDOWN_FACTOR` | 0.8 | 系数 | `<20%` 血时攻击冷却的倍率（34→27、160→128） |
 | `BOSS_XP_REWARD` | 500 | 点 | 死亡掉落经验 |
 | `BOSS_BAR_INTERVAL_TICKS` | 10 | tick | Boss 血条同步间隔 |
+| `BOSS_FORM_PARTICLE_COUNT` | 80 | 颗 | Boss 变身 `dust_color_transition` 数量 |
+| `BOSS_FORM_PARTICLE_SCALE` | 1.5 | — | Boss 变身尘粒的尺寸 |
+| `LOW_HEALTH_PARTICLE_COUNT` | 100 | 颗 | 濒死触发 `totem_of_undying` 数量 |
+| `SPEED_TRAIL_PARTICLE_INTERVAL_TICKS` | 4 | tick | 有速度效果时走路拖尾的间隔 |
+| `SPEED_TRAIL_PARTICLE_COUNT` | 2 | 颗 | 每次拖尾的 `firework` 数量 |
+| `MELEE_DUST_PARTICLE_COUNT` | 6 | 颗 | 近战命中 `dust_pillar` 数量 |
 
 ## 7. 音效与文本
 
@@ -325,7 +347,7 @@
 | `firstmob:entity.yao_yongshou.sonic_charge` | `minecraft:entity.warden.sonic_charge` | `...sonic_charge` | 姚永寿：蓄力 |
 | `firstmob:entity.yao_yongshou.sonic_boom` | `minecraft:entity.warden.sonic_boom` | `...sonic_boom` | 姚永寿：音波尖啸 |
 
-死亡信息：`death.attack.yao_spit` → `%1$s 被 %2$s 的口水淹死了`（英文：`%1$s was drowned in %2$s's spit`）。
+死亡信息：`death.attack.yao_spit` → `%1$s 被 %2$s 的口水淹死了`（英文：`%1$s was drowned in %2$s's spit`）；`death.attack.yao_melee` → `%1$s 被 %2$s 一巴掌拍死了`（英文：`%1$s was smacked to death by %2$s`）。
 
 ## 8. 资源契约
 
@@ -336,6 +358,7 @@
 | `assets/firstmob/sounds.json` | 6 个自定义事件，全部以 `{"type": "event"}` 转发原版事件 |
 | `assets/firstmob/lang/zh_cn.json` / `en_us.json` | 实体名、物品名、字幕、死亡信息 |
 | `data/firstmob/damage_type/yao_spit.json` | 口水伤害类型（`scaling: never`） |
+| `data/firstmob/damage_type/yao_melee.json` | 近战伤害类型（`scaling: never`，和平难度也生效） |
 | `assets/firstmob/models/item/yao_yongshou_spawn_egg.json` | 平面刷怪蛋模型（无 parent、无厚度） |
 | `assets/firstmob/textures/item/yao_yongshou_spawn_egg.png` | 刷怪蛋贴图 |
 
@@ -351,10 +374,11 @@
 6. 不存在幼年形态：`isBaby()` 恒 false、`getBreedingAge()` 恒 0、`createChild()` 返回 null。
 7. 自定义音效事件必须用 `{"type": "event"}` 转发原版事件，不能直接引用其他命名空间的 `.ogg`。
 8. 刷怪蛋模型不能写 `"parent": "item/generated"`。
-9. 口水伤害类型必须 `scaling: never`，否则和平难度无效。
+9. 口水与近战的伤害类型都必须 `scaling: never`，否则和平难度无效。
 10. 反击计数只在 `shootAt` / `tryAttack` 命中时扣减，别在 tick 里额外扣。
 11. 锁定期间不执行 T3 / T4 / T8，也不进入噪音声波；锁定只由满血 + 30 秒无伤解除。
 12. 空闲传送的偏角只随机在 35°~145°（左右随机），**绝不落在玩家正前方**；落点必须 3×3×4 空地；玩家周围找不到就退到 48~64 格外，5 秒后重试。
+13. 粒子只在服务端 `ServerWorld#spawnParticles` 生成（客户端 `tick` 提前返回，不重复生成）；`dust_pillar` 必须带非空气、非流体的方块状态。
 
 ## 10. 验收用例
 
@@ -386,15 +410,21 @@
 | A24 | 低血加速 | 打到 19 血 | 口水间隔约 27 tick、声波循环约 128 tick、蓄力约 27 tick |
 | A25 | 掉落经验 | 玩家击杀 | 掉落 500 点经验 |
 | A26 | 常驻 | 召唤后跑出很远再回来 | 实体仍在原地，不会自然消失 |
-| A27 | 铁傀儡式近战 | 贴身打一下 | 造成 15 点伤害，目标被向上顶起，水平方向没有额外击退 |
+| A27 | 铁傀儡式近战 | 贴身打一下 | 造成 15 点伤害（`firstmob:yao_melee`），目标被向上顶起，水平方向没有额外击退 |
 | A28 | 声波出声距离 | 普通模式下站在 10 格听它放声波 | 20 格内不出声波，改吐口水；退到 21 格才蓄力开炮，超过 40 格停 |
 | A29 | 空闲游走距离 | 召唤后直线跑出 40 格 | 20 格内它盯着你看；16~32 格站定不动；<16 格会后退；>48 格传送到你**侧前方约 20 格**（18~22 随机），不会出现在正前方视线里；游走时挂速度 III |
 | A30 | 传送落点与退路 | 玩家站在悬崖/水边跑远 | 传送只落在 3×3×4 空地；玩家周围都没落点就退到 48~64 格外，之后每 5 秒重试 |
+| A31 | 变身粒子 | 打到 79 血 | 身体中心出现橙→紫 `dust_color_transition` 尘团；回血后再打到 80% 以下不重复 |
+| A32 | 濒死粒子 | 打到 19 血 | 身体中心出现 `totem_of_undying` 粒子；回血到 20% 以上再打到 19 血会再触发一次 |
+| A33 | 速度拖尾 | 任意速度（I / II / III）走路 | 脚下持续冒 `firework`；站立不动时没有 |
+| A34 | 近战扬尘 | 贴身命中一次 | 目标脚下升起 `dust_pillar` 尘柱，贴图为脚下方块 |
+| A35 | 和平难度近战 | 和平难度下被近战命中 | 仍造成 15 点伤害（护甲/抗性照常减免），动作与 `dust_pillar` 照常播放 |
+| A36 | 创造模式近战 | 创造模式下贴身被打 | 不掉血，但能看到抡臂动画与 `dust_pillar`，且不会残留伤害 |
 
 ## 11. 已知限制
 
 - 刷怪蛋是单面平面模型：侧视是一条线，掉落物转到背面看不到图案。
-- 创造模式玩家免疫伤害：口水只击退；声波连击退也不结算，只剩粒子与音效。
+- 创造模式玩家免疫伤害：口水只击退；近战与声波不结算伤害，其中近战的动作与尘柱照常播放，声波只剩粒子与音效。
 - 声波沿用 `minecraft:sonic_boom`（`scaling: always`），和平难度伤害归零。
 - 方块声音按「挖/交互动作」计数，不按真实音效事件；交互失败、开箱子等也会计一次。
 - 只保留僵尸外观，交易、职业、脑 AI 一概不继承。
