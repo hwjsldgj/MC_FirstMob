@@ -21,8 +21,13 @@ public class YaoYongshouSpitEntity extends LlamaSpitEntity {
 	/** 自定义伤害类型：data/firstmob/damage_type/yao_spit.json */
 	public static final RegistryKey<DamageType> DAMAGE_TYPE =
 			RegistryKey.of(RegistryKeys.DAMAGE_TYPE, Identifier.of("firstmob", "yao_spit"));
+	/** <60% 锁定时的穿甲口水：data/firstmob/damage_type/yao_spit_piercing.json，并登记到 minecraft:bypasses_armor。 */
+	public static final RegistryKey<DamageType> PIERCING_DAMAGE_TYPE =
+			RegistryKey.of(RegistryKeys.DAMAGE_TYPE, Identifier.of("firstmob", "yao_spit_piercing"));
 
 	private static final float DAMAGE = 4.0F;
+	/** 锁定档：5 点伤害且穿透护甲。 */
+	private static final float LOCK_DAMAGE = 5.0F;
 	private static final double KNOCKBACK = 0.9;
 
 	public YaoYongshouSpitEntity(EntityType<? extends LlamaSpitEntity> entityType, World world) {
@@ -40,8 +45,10 @@ public class YaoYongshouSpitEntity extends LlamaSpitEntity {
 			return;
 		}
 		if (owner instanceof LivingEntity livingOwner) {
-			DamageSource source = this.getDamageSources().create(DAMAGE_TYPE, this, livingOwner);
-			living.damage(source, DAMAGE);
+			boolean piercing = livingOwner instanceof YaoYongshouEntity yao && yao.isLockMode();
+			DamageSource source = this.getDamageSources().create(
+					piercing ? PIERCING_DAMAGE_TYPE : DAMAGE_TYPE, this, livingOwner);
+			living.damage(source, piercing ? LOCK_DAMAGE : DAMAGE);
 		}
 		// 无论伤害是否生效（如创造模式），都照样击退。
 		// takeKnockback 的 (x,z) 是"从目标指向攻击者"的方向，所以这里取速度的反方向。

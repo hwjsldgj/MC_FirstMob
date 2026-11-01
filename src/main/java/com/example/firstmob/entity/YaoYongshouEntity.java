@@ -145,6 +145,9 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** 声波模式：目标跑出 40 格才停（比吐口水的 25 格远）。 */
 	private static final double SONIC_RANGE = 40.0D;
 	private static final double SONIC_RANGE_SQUARED = SONIC_RANGE * SONIC_RANGE;
+	/** Boss 80%~60%：超过 48 格放弃追击。 */
+	private static final double BOSS_GIVE_UP_RANGE = 48.0D;
+	private static final double BOSS_GIVE_UP_RANGE_SQUARED = BOSS_GIVE_UP_RANGE * BOSS_GIVE_UP_RANGE;
 	/** 原版监守者开炮前蓄力 34 tick。 */
 	private static final int SONIC_CHARGE_TICKS = 34;
 	/** 两发声波间隔 160 tick（8 秒），比原版监守者的 5 秒慢。 */
@@ -698,10 +701,14 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 	}
 
-	/** 移动速度：战斗追击速度 II；非战斗游走速度 III；其余按 Boss 形态速度 I / 普通形态无加速。 */
+	/** 移动速度：战斗追击速度 II；Boss 形态只在 32 格以外追击时用 II，32 格内回到 I；空闲游走 III。 */
 	private void updateMovementSpeed() {
 		int desired;
-		if (this.isCombatChasing()) {
+		if (this.bossForm && !this.lockMode) {
+			// 32 格内站定/吐口水/声波，回到 Boss 基础的 I；32~48 格追击才给 II
+			LivingEntity bossTarget = this.getTarget();
+			desired = bossTarget != null && this.squaredDistanceTo(bossTarget) > LOCK_SONIC_RANGE_SQUARED ? 1 : 0;
+		} else if (this.isCombatChasing()) {
 			desired = 1;
 		} else if (!this.lockMode && this.getTarget() == null && this.nearestPlayer() != null) {
 			desired = 2;
@@ -730,9 +737,14 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 	}
 
-	/** 当前近战接管距离：锁定模式 5 格（更早贴脸），其余模式 3 格。 */
+	/** 当前近战接管距离：锁定/Boss 形态 5 格（更早贴脸），其余 3 格。 */
 	private double meleeRangeSquared() {
-		return this.lockMode ? LOCK_MELEE_RANGE_SQUARED : MELEE_RANGE_SQUARED;
+		return this.lockMode || this.bossForm ? LOCK_MELEE_RANGE_SQUARED : MELEE_RANGE_SQUARED;
+	}
+
+	/** 口水是否处于残血锁定的 5 点穿甲档（由弹体命中时判断）。 */
+	boolean isLockMode() {
+		return this.lockMode;
 	}
 
 	/** 目标解析：先找最近一次打它的玩家，找不到再找最近的存活玩家（不限距离）。 */
@@ -1286,36 +1298,57 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 	}
 
-	/** Boss 形态：不再听声音，当前/最近玩家始终是目标；40 格内放声波，之外继续追击。 */
+	/** Boss 形态：不再听声音，按距离分段锁定/攻击；>48 格放弃。 */
 	private void updateBossLock(long now) {
 		PlayerEntity target = this.getTarget() instanceof PlayerEntity player && player.isAlive()
-				? player : this.nearestPlayer();
+				? player : null;
+		if (target == null || this.squaredDistanceTo(target) > BOSS_GIVE_UP_RANGE_SQUARED) {
+			PlayerEntity nearest = this.nearestPlayer();
+			target = nearest != null && this.squaredDistanceTo(nearest) <= BOSS_GIVE_UP_RANGE_SQUARED
+					? nearest : null;
+		}
 		if (target == null) {
 			this.stopSonicMode();
 			this.setTarget(null);
+			this.getNavigation().stop();
 			return;
 		}
-		// 用满愤怒维持声波档位，但 Boss 的“激怒”不依赖声音，也不走娱乐衰减
-		this.angerByPlayer.put(target.getUuid(), ANGER_ANGRY);
 		this.revengeMode = false;
 		this.revengeShots = 0;
-		if (this.squaredDistanceTo(target) <= SONIC_RANGE_SQUARED) {
+		double distanceSquared = this.squaredDistanceTo(target);
+		if (distanceSquared <= this.meleeRangeSquared()) {
+			// 5 格内只近战
+			this.stopSonicMode();
+			this.getNavigation().stop();
+		} else if (distanceSquared <= LOCK_SPIT_RANGE_SQUARED) {
+			// 5~16 格：站定吐口水（普通 4 点；<60% 锁定另有 5 点穿甲）
+			this.stopSonicMode();
+			this.getNavigation().stop();
+			if (now >= this.nextSpitTick) {
+				this.shootAt(target, 1.0F);
+				this.nextSpitTick = now + this.spitCooldownTicks();
+			}
+		} else if (distanceSquared <= SONIC_RANGE_SQUARED) {
+			// 17~40 格：32 格内站定，32 格以外边追边放
+			if (distanceSquared <= LOCK_SONIC_RANGE_SQUARED) {
+				this.getNavigation().stop();
+			} else {
+				this.getNavigation().startMovingTo(target, 1.0D);
+			}
 			if (!this.sonicMode) {
 				this.enterSonicMode(target, now);
 			} else if (!target.getUuid().equals(this.sonicTarget)) {
 				this.sonicTarget = target.getUuid();
 				this.sonicTicks = 0;
 				this.setTarget(target);
-			} else if (this.getTarget() != target) {
-				this.setTarget(target);
 			}
 		} else {
-			if (this.sonicMode) {
-				this.stopSonicMode();
-			}
-			if (this.getTarget() != target) {
-				this.setTarget(target);
-			}
+			// >40~48 格：只追踪，不攻击
+			this.stopSonicMode();
+			this.getNavigation().startMovingTo(target, 1.0D);
+		}
+		if (this.getTarget() != target) {
+			this.setTarget(target);
 		}
 	}
 
@@ -1670,13 +1703,14 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		if (target == null || target == previous || this.getWorld().isClient()) {
 			return;
 		}
-		// 第一次锁定的瞬间就先打一枪：看得见且在射程内就不等原版的开火倒计时
-		double spitRange = this.lockMode ? LOCK_SPIT_RANGE : SPIT_RANGE;
-		if (!this.isSonicCharging() && this.squaredDistanceTo(target) <= spitRange * spitRange
+		// 第一次锁定的瞬间就先打一枪：看得见、在射程内且冷却已好，就不等原版的开火倒计时
+		double spitRange = this.lockMode || this.bossForm ? LOCK_SPIT_RANGE : SPIT_RANGE;
+		long now = this.getWorld().getTime();
+		if (now >= this.nextSpitTick && !this.isSonicCharging() && this.squaredDistanceTo(target) <= spitRange * spitRange
 				&& this.getVisibilityCache().canSee(target)) {
 			this.shootAt(target, 1.0F);
-			// 记一次冷却，避免锁定模式下一 tick 又补一口
-			this.nextSpitTick = this.getWorld().getTime() + this.spitCooldownTicks();
+			// 记一次冷却，避免锁定/Boss 模式下一 tick 又补一口
+			this.nextSpitTick = now + this.spitCooldownTicks();
 		}
 	}
 
@@ -1928,7 +1962,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 
 		@Override
 		public void tick() {
-			if (!YaoYongshouEntity.this.lockMode) {
+			// 锁定/Boss 形态的走位与攻击由实体自己接管，只留视线
+			if (!YaoYongshouEntity.this.lockMode && !YaoYongshouEntity.this.bossForm) {
 				super.tick();
 				return;
 			}

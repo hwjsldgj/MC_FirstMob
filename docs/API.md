@@ -42,6 +42,7 @@
 | 注册表 | ID | Java 常量 | 文件 |
 | --- | --- | --- | --- |
 | `RegistryKeys.DAMAGE_TYPE` | `firstmob:yao_spit` | `YaoYongshouSpitEntity.DAMAGE_TYPE` | `data/firstmob/damage_type/yao_spit.json` |
+| `RegistryKeys.DAMAGE_TYPE` | `firstmob:yao_spit_piercing` | `YaoYongshouSpitEntity.PIERCING_DAMAGE_TYPE` | `data/firstmob/damage_type/yao_spit_piercing.json` + `data/minecraft/tags/damage_type/bypasses_armor.json` |
 | `RegistryKeys.DAMAGE_TYPE` | `firstmob:yao_melee` | `YaoYongshouEntity.MELEE_DAMAGE_TYPE` | `data/firstmob/damage_type/yao_melee.json` |
 
 字段语义见 [§5.2](#52-damage_type)。
@@ -104,7 +105,8 @@ public class Firstmob implements ModInitializer {
 | `updateFormAttributes` / `updateBossFormRevert`（私有） | 每 tick 一次 | 护甲/韧性按形态与血量重算：普通 5/0、Boss 20/0、Boss 且 <20% 血 10/5；Boss 形态（非锁定）连续 600 tick 无目标时退回普通形态 |
 | `updateOutOfCombatRegen`（私有） | 每 tick 一次 | 玩家连续 200 tick 未造成伤害且未满血时挂生命恢复 I（无限时长），满血或再次被打中立即移除；只移除本机制挂的无限恢复 I |
 | `updateAngerBehavior`（私有） | 每次听觉事件与每 tick | 每玩家 0~100；`<30` 冷静、`30~99` 警觉、`100` 激怒；声波进入 100、退出 `<90` |
-| `updateBossLock`（私有） | Boss 形态每 tick | Boss 完全不参与愤怒/声音：当前或最近玩家始终锁定；40 格内声波，之外继续追击 |
+| `updateBossLock`（私有） | Boss 形态每 tick | Boss 完全不参与愤怒/声音，硬锁当前/最近玩家：≤5 近战、5~16 口水、17~32 站定声波、>32~40 边追边声波、>40~48 只追（速度 II）、>48 放弃 |
+| `isLockMode`（包内可见） | 口水命中时查询 | 发射者处于 <60% 锁定时，口水改用 5 点穿甲伤害类型 |
 | `hearVibrationFrom` / `hearSupplement`（私有） | 振动回调与音效补充共用 | 锁定或 Boss 形态直接忽略；小噪音按行走/落地/受击 5 秒限频，大噪音不限 |
 | `getPrimeSuspect`（私有） | 每次档位判定 | 愤怒最高的存活玩家，同分取最近 |
 | `triggerCuriosity` / `updateCuriosityLook`（私有） | 冷静时听声 | 记录声源并转向 40 tick，40 tick 冷却；目标/声波/锁定出现即停止 |
@@ -138,9 +140,9 @@ Boss 血条是实例字段 `private final ServerBossBar bossBar`（红色 `PROGR
 
 | 成员 | 签名 | 契约 |
 | --- | --- | --- |
-| 伤害类型键 | `public static final RegistryKey<DamageType> DAMAGE_TYPE` | `firstmob:yao_spit`，数据文件必须存在 |
+| 伤害类型键 | `public static final RegistryKey<DamageType> DAMAGE_TYPE` / `PIERCING_DAMAGE_TYPE` | 普通 `firstmob:yao_spit`；<60% 锁定用 `firstmob:yao_spit_piercing`（登记到 `minecraft:bypasses_armor`） |
 | 构造函数 | `YaoYongshouSpitEntity(EntityType<? extends LlamaSpitEntity> type, World world)` | 由 `EntityType.LLAMA_SPIT` 创建 |
-| 命中 | `protected void onEntityHit(EntityHitResult result)` | 客户端直接返回；命中同类/发射者/非生物不结算；伤害 4 + 水平击退 0.9 |
+| 命中 | `protected void onEntityHit(EntityHitResult result)` | 客户端直接返回；命中同类/发射者/非生物不结算；普通 4 点，发射者为锁定中的 Yao 时 5 点穿甲；水平击退 0.9 |
 
 弹体没有自定义 `EntityType`，复用 `EntityType.LLAMA_SPIT`；因此不能通过实体类型区分口水来源，判断归属请用 `getOwner()`。
 
@@ -232,7 +234,7 @@ Loom 1.15 在 `remapJar` 阶段会把方法名重映射为 intermediary，**不�
 
 ### 5.2 `damage_type`
 
-位置 `data/firstmob/damage_type/yao_spit.json`（口水）与 `yao_melee.json`（近战），字段相同：
+位置 `data/firstmob/damage_type/yao_spit.json`（普通口水）、`yao_spit_piercing.json`（<60% 锁定穿甲口水）与 `yao_melee.json`（近战），字段相同：
 
 ```json
 {
@@ -248,7 +250,9 @@ Loom 1.15 在 `remapJar` 阶段会把方法名重映射为 intermediary，**不�
 | `exhaustion` | 0.1 | 受击者的饥饿消耗 |
 | `scaling` | `never` | **必须**；否则 `PlayerEntity#damage` 会按难度清零，和平难度下口水与近战都无效 |
 
-新增伤害类型时同步：`RegistryKey` 常量 → 数据文件 → `lang/*.json` 的 `death.attack.<message_id>`。
+穿甲口水还要登记到 `data/minecraft/tags/damage_type/bypasses_armor.json`（`"replace": false`，只追加 `firstmob:yao_spit_piercing`），否则只是普通伤害。
+
+新增伤害类型时同步：`RegistryKey` 常量 → 数据文件（必要时加标签）→ `lang/*.json` 的 `death.attack.<message_id>`。
 
 ### 5.3 语言文件
 
