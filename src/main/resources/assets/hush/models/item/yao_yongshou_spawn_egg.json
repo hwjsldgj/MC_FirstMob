@@ -1,8 +1,8 @@
 {
   "gui_light": "front",
   "textures": {
-    "txt": "firstmob:item/yao_yongshou_spawn_egg",
-    "particle": "firstmob:item/yao_yongshou_spawn_egg"
+    "txt": "hush:item/yao_yongshou_spawn_egg",
+    "particle": "hush:item/yao_yongshou_spawn_egg"
   },
   "display": {
     "ground": {

@@ -1,6 +1,6 @@
-package com.example.firstmob.registry;
+package com.example.hush.registry;
 
-import com.example.firstmob.Firstmob;
+import com.example.hush.Hush;
 
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
@@ -20,7 +20,7 @@ public final class ModSounds {
 	public static final SoundEvent SONIC_BOOM = register("entity.yao_yongshou.sonic_boom");
 
 	private static SoundEvent register(String path) {
-		Identifier id = Firstmob.id(path);
+		Identifier id = Hush.id(path);
 		return Registry.register(Registries.SOUND_EVENT, id, SoundEvent.of(id));
 	}
 

@@ -1,6 +1,6 @@
-package com.example.firstmob.client;
+package com.example.hush.client;
 
-import com.example.firstmob.entity.YaoYongshouEntity;
+import com.example.hush.entity.YaoYongshouEntity;
 
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.entity.model.BipedEntityModel;

@@ -1,6 +1,6 @@
 {
   "entity.yao_yongshou.ambient": {
-    "subtitle": "subtitles.firstmob.entity.yao_yongshou.ambient",
+    "subtitle": "subtitles.hush.entity.yao_yongshou.ambient",
     "sounds": [
       {
         "name": "minecraft:entity.llama.ambient",
@@ -9,7 +9,7 @@
     ]
   },
   "entity.yao_yongshou.hurt": {
-    "subtitle": "subtitles.firstmob.entity.yao_yongshou.hurt",
+    "subtitle": "subtitles.hush.entity.yao_yongshou.hurt",
     "sounds": [
       {
         "name": "minecraft:entity.llama.hurt",
@@ -18,7 +18,7 @@
     ]
   },
   "entity.yao_yongshou.death": {
-    "subtitle": "subtitles.firstmob.entity.yao_yongshou.death",
+    "subtitle": "subtitles.hush.entity.yao_yongshou.death",
     "sounds": [
       {
         "name": "minecraft:entity.llama.death",
@@ -27,7 +27,7 @@
     ]
   },
   "entity.yao_yongshou.spit": {
-    "subtitle": "subtitles.firstmob.entity.yao_yongshou.spit",
+    "subtitle": "subtitles.hush.entity.yao_yongshou.spit",
     "sounds": [
       {
         "name": "minecraft:entity.llama.spit",
@@ -36,7 +36,7 @@
     ]
   },
   "entity.yao_yongshou.sonic_charge": {
-    "subtitle": "subtitles.firstmob.entity.yao_yongshou.sonic_charge",
+    "subtitle": "subtitles.hush.entity.yao_yongshou.sonic_charge",
     "sounds": [
       {
         "name": "minecraft:entity.warden.sonic_charge",
@@ -45,7 +45,7 @@
     ]
   },
   "entity.yao_yongshou.sonic_boom": {
-    "subtitle": "subtitles.firstmob.entity.yao_yongshou.sonic_boom",
+    "subtitle": "subtitles.hush.entity.yao_yongshou.sonic_boom",
     "sounds": [
       {
         "name": "minecraft:entity.warden.sonic_boom",

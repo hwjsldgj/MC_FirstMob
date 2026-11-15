@@ -1,0 +1,12 @@
+{
+  "entity.hush.yao_yongshou": "Yao Yongshou",
+  "item.hush.yao_yongshou_spawn_egg": "Yao Yongshou Spawn Egg",
+  "subtitles.hush.entity.yao_yongshou.ambient": "Yao Yongshou bleats",
+  "subtitles.hush.entity.yao_yongshou.hurt": "Yao Yongshou hurts",
+  "subtitles.hush.entity.yao_yongshou.death": "Yao Yongshou dies",
+  "subtitles.hush.entity.yao_yongshou.spit": "Yao Yongshou spits",
+  "subtitles.hush.entity.yao_yongshou.sonic_charge": "Yao Yongshou charges",
+  "subtitles.hush.entity.yao_yongshou.sonic_boom": "Yao Yongshou: Sonic Boom",
+  "death.attack.yao_spit": "%1$s was drowned in %2$s's spit",
+  "death.attack.yao_melee": "%1$s was smacked to death by %2$s"
+}

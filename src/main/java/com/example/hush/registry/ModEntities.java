@@ -1,7 +1,7 @@
-package com.example.firstmob.registry;
+package com.example.hush.registry;
 
-import com.example.firstmob.Firstmob;
-import com.example.firstmob.entity.YaoYongshouEntity;
+import com.example.hush.Hush;
+import com.example.hush.entity.YaoYongshouEntity;
 
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
 import net.minecraft.entity.EntityType;
@@ -17,18 +17,18 @@ public final class ModEntities {
 	private static final double MAX_HEALTH = 100.0D;
 	/** 普通形态体型 1 倍；掉到 80% 血以下时由实体自己写入 2 倍。 */
 	private static final double NORMAL_SCALE = 1.0D;
-	/** 普通形态护甲 5 点；Boss 形态由实体改写为 20 点，低于 20% 血时 10 点 + 10 韧性。 */
+	/** 普通（阶段 1）护甲 5 点；阶段 2/3/4 由实体每 tick 改写为 10/15/20。 */
 	private static final double NORMAL_ARMOR = 5.0D;
-	/** 普通形态没有护甲韧性；Boss 形态低于 20% 血时由实体写入 10。 */
+	/** 所有阶段的护甲韧性都是 0。 */
 	private static final double NORMAL_ARMOR_TOUGHNESS = 0.0D;
-	/** 近战伤害：对齐铁傀儡（`GENERIC_ATTACK_DAMAGE = 15`）。 */
-	private static final double ATTACK_DAMAGE = 15.0D;
-	/** 近战击退：铁傀儡没有 `attack_knockback` 加成，靠命中时向上 0.4 的顶飞，所以这里保持 0。 */
+	/** 阶段 1 近战伤害 5 点；阶段 2~4 由实体按血量改写。 */
+	private static final double ATTACK_DAMAGE = 5.0D;
+	/** 近战击退靠命中时向上 0.4 的顶飞，`attack_knockback` 保持 0。 */
 	private static final double ATTACK_KNOCKBACK = 0.0D;
 
 	public static final EntityType<YaoYongshouEntity> YAO_YONGSHOU = Registry.register(
 			Registries.ENTITY_TYPE,
-			Identifier.of(Firstmob.MOD_ID, "yao_yongshou"),
+			Identifier.of(Hush.MOD_ID, "yao_yongshou"),
 			EntityType.Builder.create(YaoYongshouEntity::new, SpawnGroup.MISC)
 					.dimensions(0.6F, 1.95F)
 					.eyeHeight(1.62F)

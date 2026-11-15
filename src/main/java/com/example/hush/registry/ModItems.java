@@ -1,6 +1,6 @@
-package com.example.firstmob.registry;
+package com.example.hush.registry;
 
-import com.example.firstmob.Firstmob;
+import com.example.hush.Hush;
 
 import net.minecraft.item.Item;
 import net.minecraft.item.SpawnEggItem;
@@ -12,7 +12,7 @@ public final class ModItems {
 	/** 姚永寿刷怪蛋 */
 	public static final Item YAO_YONGSHOU_SPAWN_EGG = Registry.register(
 			Registries.ITEM,
-			Identifier.of(Firstmob.MOD_ID, "yao_yongshou_spawn_egg"),
+			Identifier.of(Hush.MOD_ID, "yao_yongshou_spawn_egg"),
 			new SpawnEggItem(ModEntities.YAO_YONGSHOU, 0x8A6D3B, 0x5C4033, new Item.Settings())
 	);
 

@@ -1,11 +1,11 @@
-package com.example.firstmob.client;
+package com.example.hush.client;
 
-import com.example.firstmob.registry.ModEntities;
+import com.example.hush.registry.ModEntities;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 
-public class FirstmobClient implements ClientModInitializer {
+public class HushClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		// 僵尸模型 + 羊驼行为

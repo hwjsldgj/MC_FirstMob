@@ -1,24 +1,24 @@
 {
 	"schemaVersion": 1,
-	"id": "firstmob",
+	"id": "hush",
 	"version": "${version}",
-	"name": "Firstmob · 姚永寿",
-	"description": "新增生物「姚永寿」：保留村民的实体外形，行为改用羊驼的寻路与吐口水攻击，并附带自定义贴图的刷怪蛋。",
+	"name": "肃静 · 姚永寿",
+	"description": "肃静（Hush）：新增生物「姚永寿」，按血量分四阶段战斗，近战、口水与监守者声波都按阶段强化；附带自定义贴图的刷怪蛋。",
 	"authors": [
-		"Firstmob"
+		"Hush"
 	],
 	"license": "CC0-1.0",
-	"icon": "assets/firstmob/icon.png",
+	"icon": "assets/hush/icon.png",
 	"environment": "*",
 	"mixins": [
-		"firstmob.mixins.json"
+		"hush.mixins.json"
 	],
 	"entrypoints": {
 		"main": [
-			"com.example.firstmob.Firstmob"
+			"com.example.hush.Hush"
 		],
 		"client": [
-			"com.example.firstmob.client.FirstmobClient"
+			"com.example.hush.client.HushClient"
 		]
 	},
 	"depends": {

@@ -20,7 +20,7 @@ loom {
 	splitEnvironmentSourceSets()
 
 	mods {
-		"firstmob" {
+		"hush" {
 			sourceSet sourceSets.main
 			sourceSet sourceSets.client
 		}

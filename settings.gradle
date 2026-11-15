@@ -15,4 +15,4 @@ pluginManagement {
 }
 
 // Should match your modid
-rootProject.name = 'firstmob'
+rootProject.name = 'hush'
