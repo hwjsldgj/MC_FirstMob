@@ -157,7 +157,7 @@ docs/                               # SPEC / API / 文档索引
 | 非快进推送（强推） | 禁止 |
 | 合并方式 | 必须走 Pull Request |
 | 审查 | 0 个必需批准；必须解决全部 review 线程；未开启「最后推送需批准」；无 bypass 角色 |
-| 必需状态检查 | **未配置**；约定 CI `build` 绿了再合 |
+| 必需状态检查 | **已配置**：`build`（`strict_required_status_checks_policy=false`）；CI 未绿不能合 |
 | 允许的合并方式 | merge / squash / rebase（实际统一用 merge，保留提交历史） |
 | 合并后删源分支 | 是（`delete_branch_on_merge=true`）；自动合并关闭 |
 
@@ -179,7 +179,7 @@ git switch main; git pull
 ```
 
 - CI 工作流：`.github/workflows/build.yml`，PR 与 `main` push 都触发，JDK 21，执行 `./gradlew build` 并上传 `build/libs/*.jar`。
-- 规则集目前**没有**把 `build` 设为必需检查，所以「CI 绿了再合」靠自觉；闸门要不要加在仓库设置里，不在代码层。
+- 规则集已把 `build` 设为必需状态检查（`strict=false`）：PR 的 `build` 没通过就不能合；改工作流时不能改 job 名，否则规则集的 context 对不上，合并会一直卡在 Expected。
 - PR 正文至少包含：改了什么、怎么验证的、没验证什么。
 
 ## 提交规范
