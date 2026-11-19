@@ -21,6 +21,7 @@
 - 记录 ruleset 曾开启 `require_last_push_approval` 导致作者无法合并、关闭后恢复 `CLEAN` 的实测结论
 - README 与 AGENTS 的目录结构补充 `combat/CombatProfile.java`、`src/test` 与 `.github/workflows`
 - API 修正 `combatPhaseFor` 的分档描述，并补上 `CombatProfile` 条目
+- 新增 `docs/ARCHITECTURE.md`：原版依赖强弱、长期可靠性评估与四步演进路线（含触发条件），`docs/README.md` 索引同步
 
 ## 2.0.0
 

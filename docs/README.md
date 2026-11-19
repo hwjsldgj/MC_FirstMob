@@ -7,6 +7,7 @@
 | [README](../README.md) | 模组简介、玩法速览、构建与安装 | 玩家 / 使用者 |
 | [SPEC](SPEC.md) | 行为规范：四阶段、索敌、攻击与穿甲、数值表、验收用例 | 策划 / 测试 / 开发者 |
 | [API](API.md) | 接口：注册 ID、Java 成员、Mixin、资源契约、稳定度 | 二次开发 / 维护者 |
+| [ARCHITECTURE](ARCHITECTURE.md) | 架构评估：原版依赖强弱、长期可靠性、四步演进路线 | 架构决策 / 迭代排期 |
 | [AGENTS](../AGENTS.md) | 工程约定：环境、结构、不变量、踩坑、验证、分支与合并、提交 | 协作者 / AI |
 | [CHANGELOG](../CHANGELOG.md) | 版本变更记录 | 所有人 |
 
@@ -16,6 +17,7 @@
 2. 想改行为/数值：读 [SPEC](SPEC.md) 的状态机与数值总表，再动代码。
 3. 想接 API/改资源：读 [API](API.md) 的稳定度分级与资源契约。
 4. 要提交代码：读 [AGENTS](../AGENTS.md) 的不变量、踩坑与「分支与合并」，跑完验收用例。
+5. 要评估重构或排期：读 [ARCHITECTURE](ARCHITECTURE.md) 的演进路线与触发条件。
 
 ## 维护规则
 
