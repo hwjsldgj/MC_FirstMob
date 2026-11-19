@@ -42,3 +42,7 @@ replay_*.log
 # local logs
 *.log
 
+# windows shell / explorer
+Thumbs.db
+desktop.ini
+

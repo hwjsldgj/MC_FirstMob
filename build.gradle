@@ -35,6 +35,14 @@ dependencies {
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// 单元测试：只覆盖不依赖 Minecraft 的纯逻辑（CombatProfile），可在 CI 与无游戏环境跑。
+	testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
+}
+
+test {
+	useJUnitPlatform()
 }
 
 processResources {

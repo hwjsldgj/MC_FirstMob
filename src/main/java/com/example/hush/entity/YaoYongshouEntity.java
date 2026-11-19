@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.util.function.BiConsumer;
 
 import com.example.hush.Hush;
+import com.example.hush.combat.CombatProfile;
 import com.example.hush.registry.ModSounds;
 
 import net.minecraft.block.BlockState;
@@ -72,8 +73,8 @@ import net.minecraft.world.World;
 import org.joml.Vector3f;
 
 /**
- * 姚永寿：只保留僵尸的外形（由渲染器负责），
- * 行为完全改用羊驼：寻路、跟随商队、远程吐口水；近距离额外加近战。
+ * 姚永寿：只保留僵尸的外形（由渲染器负责），行为沿用羊驼的普通寻路与吐口水，
+ * 近距离额外加近战；阶段阈值、伤害与距离全部查 {@link CombatProfile}。
  */
 public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** 听觉半径（格）：与羊驼吐口水的最大射程一致，20 格内都算"周围"。 */
@@ -108,8 +109,11 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final int SUPPLEMENT_PAIR_TICKS = 2;
 	/** 吐口水冷却：羊驼默认 40 tick，这里减 0.3 秒 = 34 tick。 */
 	private static final int SPIT_COOLDOWN_TICKS = 34;
-	/** 临时诊断日志开关：只记录触发/停火/反击/开炮/声波，定位完就关掉。 */
-	private static final boolean DEBUG = true;
+	/**
+	 * 诊断日志开关：默认关闭，避免正式包刷日志；排查时用系统属性
+	 * {@code -Dhush.debug=true} 打开（实例化前设置，全局生效）。
+	 */
+	private static final boolean DEBUG = Boolean.getBoolean("hush.debug");
 
 	private void debug(String message, Object... args) {
 		if (DEBUG) {
@@ -125,30 +129,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final int REVENGE_TIMEOUT_TICKS = 100;
 	/** 所有阶段的近战接管距离都是 5 格（阶段 1 也放宽到 5 格）。 */
 	private static final double MELEE_RANGE_SQUARED = 25.0D;
-	/** 阶段阈值：<80% 进 Boss，60% 起完全锁定，30% 起狂暴。 */
-	private static final float PHASE_2_HEALTH_RATIO = 0.8F;
-	private static final float PHASE_3_HEALTH_RATIO = 0.6F;
-	private static final float PHASE_4_HEALTH_RATIO = 0.3F;
-	/** 各阶段口水最大距离（格）：阶段 1 是 6~24，其余阶段 6~16。 */
-	private static final double PHASE_1_SPIT_RANGE = 24.0D;
-	private static final double PHASE_SHORT_SPIT_RANGE = 16.0D;
-	/** 声波分段：阶段 1/2 17~24，阶段 3 17~32，阶段 4 25~48。 */
-	private static final double SONIC_MIN_RANGE = 17.0D;
-	private static final double PHASE_4_SONIC_MIN_RANGE = 25.0D;
-	private static final double PHASE_1_2_SONIC_MAX_RANGE = 24.0D;
-	private static final double PHASE_4_SONIC_MAX_RANGE = 48.0D;
-	/** 阶段 4 的 17~24 格随机档。 */
-	private static final double PHASE_4_RANDOM_MIN_RANGE = 17.0D;
-	private static final double PHASE_4_RANDOM_MAX_RANGE = 24.0D;
-	/** 追到多远就停下：8 / 16 / 16 / 32 格。 */
-	private static final double PHASE_1_CHASE_STOP_RANGE = 8.0D;
-	private static final double PHASE_2_CHASE_STOP_RANGE = 16.0D;
-	private static final double PHASE_3_CHASE_STOP_RANGE = 16.0D;
-	private static final double PHASE_4_CHASE_STOP_RANGE = 32.0D;
-	/** 阶段 2 超过 32 格脱锁；阶段 3/4 永不脱锁。 */
-	private static final double PHASE_2_GIVE_UP_RANGE = 32.0D;
-	/** 阶段 4 超过 64 格只追不打，速度再 +1。 */
-	private static final double PHASE_4_CHASE_ONLY_RANGE = 64.0D;
+	/** 阶段阈值、伤害、距离分段全部查 {@link CombatProfile}（纯数值表，有单测盖住）。 */
 	/**
 	 * 近战伤害类型：data/hush/damage_type/yao_melee.json。
 	 * <p>`scaling: never` 是必须的——原版 `mob_attack` 在和平难度会被整段清零，
@@ -164,19 +145,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final int BOSS_XP_REWARD = 500;
 	/** Boss 血条同步间隔：每 tick 都刷新会不停发包，10 tick（0.5 秒）足够跟手。 */
 	private static final int BOSS_BAR_INTERVAL_TICKS = 10;
-	/** Boss 形态血量阈值：掉到 80% 以下就变身；退回普通形态后重新获得目标会再次变身。 */
-	private static final float BOSS_FORM_HEALTH_RATIO = 0.8F;
-	/** Boss 形态体型：运行时写进 generic.scale，碰撞箱、眼高与模型一起放大。 */
-	private static final double BOSS_SCALE = 2.0D;
-	/** 普通形态体型：退回普通形态时写回。 */
-	private static final double NORMAL_SCALE = 1.0D;
-	/** 阶段 1 护甲 5 点；阶段 2/3/4 分别为 10/15/20 点（每 tick 按阶段重算）。 */
-	private static final double NORMAL_ARMOR = 5.0D;
-	private static final double PHASE_2_ARMOR = 10.0D;
-	private static final double PHASE_3_ARMOR = 15.0D;
-	private static final double PHASE_4_ARMOR = 20.0D;
-	/** 所有阶段都没有护甲韧性。 */
-	private static final double ARMOR_TOUGHNESS = 0.0D;
+	/** 体型与护甲数值同样来自 {@link CombatProfile}，这里只保留运行时状态。 */
 	/** 脱战回血：玩家连续 10 秒（200 tick）没造成伤害，且未满血时挂生命恢复 I。 */
 	private static final int OUT_OF_COMBAT_REGEN_TICKS = 200;
 	private static final int OUT_OF_COMBAT_REGEN_AMPLIFIER = 0;
@@ -230,13 +199,13 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final TrackedData<Integer> ATTACK_START_AGE = DataTracker.registerData(YaoYongshouEntity.class,
 			TrackedDataHandlerRegistry.INTEGER);
 
-	/** 每个玩家当前的愤怒值（0~90）。 */
+	/** 每个玩家当前的愤怒值（0~100）。 */
 	private final Map<UUID, Integer> angerByPlayer = new HashMap<>();
 	/** 每个玩家最近一次被 GameEvent 命中的 tick：音效只在没有事件配对时作为补充。 */
 	private final Map<UUID, Long> lastGameEventTicks = new HashMap<>();
 	/** 每个玩家最近一次"音效补充"计数的 tick：若 GameEvent 稍后才到，用来回滚这次补充。 */
 	private final Map<UUID, Long> lastSupplementTicks = new HashMap<>();
-	/** 愤怒衰减计时：每 50 tick 全体 -1。 */
+	/** 愤怒衰减计时：每 20 tick 全体 -1（{@link #ANGER_DECAY_INTERVAL_TICKS}）。 */
 	private int angerDecayTimer;
 	/** 好奇：看向声源的位置与截止 tick。 */
 	private Vec3d curiousPos;
@@ -368,7 +337,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 		float ratio = this.getHealth() / this.getMaxHealth();
 		if (!this.bossForm) {
-			if (ratio >= BOSS_FORM_HEALTH_RATIO) {
+			if (ratio >= CombatProfile.PHASE_2_HEALTH_RATIO) {
 				// 回满血：下次掉到 80% 以下仍照常变身
 				this.bossFormDormant = false;
 			} else if (!this.bossFormDormant || this.getTarget() != null) {
@@ -384,21 +353,13 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 
 	/** 阶段取档：Boss 形态至少是 2；回血跨过阈值会退回低阶段。 */
 	private int combatPhaseFor(float ratio) {
-		if (!this.bossForm) {
-			return 1;
-		}
-		if (ratio >= PHASE_3_HEALTH_RATIO) {
-			return 2;
-		}
-		if (ratio > PHASE_4_HEALTH_RATIO) {
-			return 3;
-		}
-		return 4;
+		return CombatProfile.phaseFor(ratio, this.bossForm);
 	}
 
 	/** 阶段 4：血量从 30% 以上跌破 30% 时触发额外增益，冷却 1 分钟，可重复。 */
 	private void updatePhase4Trigger(float ratio) {
-		if (!this.bossForm || ratio > PHASE_4_HEALTH_RATIO || this.previousHealthRatio <= PHASE_4_HEALTH_RATIO) {
+		if (!this.bossForm || ratio > CombatProfile.PHASE_4_HEALTH_RATIO
+				|| this.previousHealthRatio <= CombatProfile.PHASE_4_HEALTH_RATIO) {
 			return;
 		}
 		long now = this.getWorld().getTime();
@@ -418,7 +379,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.bossFormDormant = false;
 		this.noTargetTicks = 0;
 		this.curiousUntil = 0L;
-		this.setBaseAttribute(EntityAttributes.GENERIC_SCALE, BOSS_SCALE);
+		this.setBaseAttribute(EntityAttributes.GENERIC_SCALE, CombatProfile.BOSS_SCALE);
 		this.phase = Math.max(2, this.combatPhaseFor(this.getHealth() / this.getMaxHealth()));
 		this.updateFormAttributes();
 		this.updatePhaseBuffs();
@@ -435,9 +396,9 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.bossFormDormant = true;
 		this.noTargetTicks = 0;
 		this.phase = 1;
-		this.setBaseAttribute(EntityAttributes.GENERIC_SCALE, NORMAL_SCALE);
-		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR, NORMAL_ARMOR);
-		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR_TOUGHNESS, ARMOR_TOUGHNESS);
+		this.setBaseAttribute(EntityAttributes.GENERIC_SCALE, CombatProfile.NORMAL_SCALE);
+		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR, CombatProfile.armor(1));
+		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR_TOUGHNESS, CombatProfile.ARMOR_TOUGHNESS);
 		this.removePhaseBuffs();
 		// Boss 期间强制的满愤怒不带到普通形态，避免一退回就接着放声波
 		this.angerByPlayer.clear();
@@ -506,20 +467,15 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 
 	/** 护甲/韧性/攻击力按当前阶段实时重算：5/10/15/20，韧性恒 0。 */
 	private void updateFormAttributes() {
-		double armor = switch (this.phase) {
-			case 1 -> NORMAL_ARMOR;
-			case 2 -> PHASE_2_ARMOR;
-			case 3 -> PHASE_3_ARMOR;
-			default -> PHASE_4_ARMOR;
-		};
+		double armor = CombatProfile.armor(this.phase);
 		double attackDamage = this.meleeDamage();
 		if (this.getAttributeValue(EntityAttributes.GENERIC_ARMOR) == armor
-				&& this.getAttributeValue(EntityAttributes.GENERIC_ARMOR_TOUGHNESS) == ARMOR_TOUGHNESS
+				&& this.getAttributeValue(EntityAttributes.GENERIC_ARMOR_TOUGHNESS) == CombatProfile.ARMOR_TOUGHNESS
 				&& this.getAttributeValue(EntityAttributes.GENERIC_ATTACK_DAMAGE) == attackDamage) {
 			return;
 		}
 		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR, armor);
-		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR_TOUGHNESS, ARMOR_TOUGHNESS);
+		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR_TOUGHNESS, CombatProfile.ARMOR_TOUGHNESS);
 		this.setBaseAttribute(EntityAttributes.GENERIC_ATTACK_DAMAGE, attackDamage);
 		debug("FORM phase={} armor={} attack={} hp={}", this.phase, armor, attackDamage, this.getHealth());
 	}
@@ -579,102 +535,63 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	// 阶段攻击档案：伤害、穿甲、击退、距离分段
 	// ------------------------------------------------------------------
 
-	/** 近战总伤害：5 / 8 / 8 / 10。 */
+	/** 近战总伤害：5 / 8 / 8 / 10（表值见 {@link CombatProfile}）。 */
 	private float meleeDamage() {
-		return switch (this.phase) {
-			case 1 -> 5.0F;
-			case 2 -> 8.0F;
-			case 3 -> 8.0F;
-			default -> 10.0F;
-		};
+		return (float) CombatProfile.meleeDamage(this.phase);
 	}
 
 	/** 近战中无视护甲的伤害：0 / 0 / 4 / 5。 */
 	private float meleePiercing() {
-		return switch (this.phase) {
-			case 1, 2 -> 0.0F;
-			case 3 -> 4.0F;
-			default -> 5.0F;
-		};
+		return (float) CombatProfile.meleePiercing(this.phase);
 	}
 
 	/** 口水伤害：3 / 4 / 5 / 6。 */
 	private float spitDamage() {
-		return switch (this.phase) {
-			case 1 -> 3.0F;
-			case 2 -> 4.0F;
-			case 3 -> 5.0F;
-			default -> 6.0F;
-		};
+		return (float) CombatProfile.spitDamage(this.phase);
 	}
 
 	/** 口水穿甲：0 / 0 / 3 / 4；阶段 4 的 17~24 随机口水是 8 点、无穿甲。 */
 	private float spitPiercing() {
-		return switch (this.phase) {
-			case 1, 2 -> 0.0F;
-			case 3 -> 3.0F;
-			default -> 4.0F;
-		};
+		return (float) CombatProfile.spitPiercing(this.phase);
 	}
 
 	/** 口水击退：阶段 1 无，阶段 2 为 I，阶段 3/4 为 II。 */
 	private double spitKnockback() {
-		return switch (this.phase) {
-			case 1 -> 0.0D;
-			case 2 -> 0.9D;
-			default -> 1.4D;
-		};
+		return CombatProfile.spitKnockback(this.phase);
 	}
 
 	/** 声波伤害：6 / 8 / 10 / 14。 */
 	private float sonicDamage() {
-		return switch (this.phase) {
-			case 1 -> 6.0F;
-			case 2 -> 8.0F;
-			case 3 -> 10.0F;
-			default -> 14.0F;
-		};
+		return (float) CombatProfile.sonicDamage(this.phase);
 	}
 
 	/** 口水最大距离的平方：阶段 1 为 24，其余为 16。 */
 	private double spitRangeSquared() {
-		double range = this.phase == 1 ? PHASE_1_SPIT_RANGE : PHASE_SHORT_SPIT_RANGE;
+		double range = CombatProfile.spitRange(this.phase);
 		return range * range;
 	}
 
 	/** 声波攻击外边界（含边追边打）：24 / 32 / 48 / 64。 */
 	private double sonicAttackMaxRangeSquared() {
-		double range = switch (this.phase) {
-			case 1 -> PHASE_1_2_SONIC_MAX_RANGE;
-			case 2 -> PHASE_2_GIVE_UP_RANGE;
-			case 3 -> PHASE_4_SONIC_MAX_RANGE;
-			default -> PHASE_4_CHASE_ONLY_RANGE;
-		};
+		double range = CombatProfile.sonicMaxRange(this.phase);
 		return range * range;
 	}
 
 	/** 声波内边界：阶段 4 从 25 格起，其余从 17 格起。 */
 	private double sonicMinRangeSquared() {
-		double range = this.phase == 4 ? PHASE_4_SONIC_MIN_RANGE : SONIC_MIN_RANGE;
+		double range = CombatProfile.sonicMinRange(this.phase);
 		return range * range;
 	}
 
 	/** 追到多远停下：8 / 16 / 16 / 32。 */
 	private double chaseStopRangeSquared() {
-		double range = switch (this.phase) {
-			case 1 -> PHASE_1_CHASE_STOP_RANGE;
-			case 2 -> PHASE_2_CHASE_STOP_RANGE;
-			case 3 -> PHASE_3_CHASE_STOP_RANGE;
-			default -> PHASE_4_CHASE_STOP_RANGE;
-		};
+		double range = CombatProfile.chaseStopRange(this.phase);
 		return range * range;
 	}
 
 	/** 阶段 4 的 17~24 格随机档。 */
 	private boolean inPhase4RandomBand(double distanceSquared) {
-		return this.phase == 4
-				&& distanceSquared >= PHASE_4_RANDOM_MIN_RANGE * PHASE_4_RANDOM_MIN_RANGE
-				&& distanceSquared <= PHASE_4_RANDOM_MAX_RANGE * PHASE_4_RANDOM_MAX_RANGE;
+		return CombatProfile.inRandomBand(this.phase, distanceSquared);
 	}
 
 	/** 改属性基值；只有缩放变了才重算碰撞箱，护甲/韧性每 tick 同步时不白算一遍。 */
@@ -821,10 +738,10 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			this.lockSonicTicks = 0;
 			if (now >= this.nextSpitTick) {
 				this.nextSpitTick = now + SPIT_COOLDOWN_TICKS;
-				if (this.random.nextFloat() < 0.75F) {
-					this.shootSpit(target, 8.0F, 0.0F, this.spitKnockback());
+				if (this.random.nextFloat() < CombatProfile.RANDOM_SPIT_CHANCE) {
+					this.shootSpit(target, CombatProfile.RANDOM_SPIT_DAMAGE, 0.0F, this.spitKnockback());
 				} else {
-					this.fireSonicBoom(target, 12.0F);
+					this.fireSonicBoom(target, CombatProfile.RANDOM_SONIC_DAMAGE);
 				}
 			}
 			return;
@@ -851,7 +768,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			boolean chasing = this.squaredDistanceTo(target) > this.meleeRangeSquared();
 			desired = chasing ? base + 1 : base;
 			if (this.phase == 4 && chasing
-					&& this.squaredDistanceTo(target) > PHASE_4_CHASE_ONLY_RANGE * PHASE_4_CHASE_ONLY_RANGE) {
+					&& this.squaredDistanceTo(target) > CombatProfile.CHASE_ONLY_RANGE * CombatProfile.CHASE_ONLY_RANGE) {
 				desired += 1;
 			}
 		}
@@ -892,8 +809,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 		PlayerEntity current = this.getTarget() instanceof PlayerEntity player && player.isAlive()
 				&& !player.isSpectator() ? player : null;
-		double giveUpSquared = this.phase >= 3 ? Double.MAX_VALUE
-				: PHASE_2_GIVE_UP_RANGE * PHASE_2_GIVE_UP_RANGE;
+		double giveUp = CombatProfile.giveUpRange(this.phase);
+		double giveUpSquared = giveUp * giveUp;
 		if (current != null && this.squaredDistanceTo(current) <= giveUpSquared) {
 			return current;
 		}
@@ -925,7 +842,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	// ------------------------------------------------------------------
-	// 空闲游走：与玩家保持 16 格以上，>36 格传送到约 20 格
+	// 空闲游走：与玩家保持 16 格以上，>48 格传送到侧前方约 20 格
 	// ------------------------------------------------------------------
 
 	/** 空闲（无目标、未变身）时维持 ≥16 格站距：20 格内注视，>20 靠近，<16 后退，>36 传送。 */
@@ -1139,7 +1056,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.speedLevel = -1;
 		if (this.bossForm && !this.getWorld().isClient()) {
 			// 属性基值随 Attributes 存档；体型、阶段与增益属于状态，读档时补回来
-			this.setBaseAttribute(EntityAttributes.GENERIC_SCALE, BOSS_SCALE);
+			this.setBaseAttribute(EntityAttributes.GENERIC_SCALE, CombatProfile.BOSS_SCALE);
 			this.phase = Math.max(2, this.combatPhaseFor(this.previousHealthRatio));
 			this.updateFormAttributes();
 			this.updatePhaseBuffs();
@@ -1198,7 +1115,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 	}
 
-	/** Boss 经验：死亡掉落 200 点（原版由击杀者吸收）。 */
+	/** Boss 经验：死亡掉落 {@link #BOSS_XP_REWARD} 点（原版由击杀者吸收）。 */
 	@Override
 	protected int getXpToDrop() {
 		return BOSS_XP_REWARD;
@@ -1625,9 +1542,11 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.faceTarget(player);
 		this.sonicTicks++;
 		// 17~24 格才开炮；6~16 格由口水接管（shootAt 会在 17~24 格拒绝口水）
+		double minRange = CombatProfile.sonicMinRange(1);
+		double maxRange = CombatProfile.sonicMaxRange(1);
 		if (this.sonicTicks == SONIC_CHARGE_TICKS
-				&& this.squaredDistanceTo(player) >= SONIC_MIN_RANGE * SONIC_MIN_RANGE
-				&& this.squaredDistanceTo(player) <= MAX_CHASE_RANGE_SQUARED) {
+				&& this.squaredDistanceTo(player) >= minRange * minRange
+				&& this.squaredDistanceTo(player) <= maxRange * maxRange) {
 			this.fireSonicBoom(player, this.sonicDamage());
 		}
 		if (this.sonicTicks >= SONIC_INTERVAL_TICKS) {
@@ -1690,7 +1609,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.goalSelector.add(2, new CloseMeleeGoal(this, 1.2, true));
 		// 远程：阶段 1 由原版 Goal 控制走位/口水；Boss 阶段的走位/攻击由 updateBossCombat 接管
 		this.goalSelector.add(3, new LockAwareProjectileAttackGoal(1.25D, SPIT_COOLDOWN_TICKS,
-				(float) PHASE_1_SPIT_RANGE));
+				(float) CombatProfile.spitRange(1)));
 		this.goalSelector.add(6, new IdleWanderGoal(this, 1.0D));
 		this.goalSelector.add(7, new CalmLookAtEntityGoal(this));
 		this.goalSelector.add(8, new CalmLookAroundGoal(this));
@@ -1763,7 +1682,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			return;
 		}
 		// 第一次锁定的瞬间就先打一枪：看得见、在射程内且冷却已好，就不等原版的开火倒计时
-		double spitRange = this.bossForm ? PHASE_SHORT_SPIT_RANGE : PHASE_1_SPIT_RANGE;
+		double spitRange = CombatProfile.spitRange(this.phase);
 		long now = this.getWorld().getTime();
 		if (now >= this.nextSpitTick && !this.isSonicCharging() && this.squaredDistanceTo(target) <= spitRange * spitRange
 				&& this.getVisibilityCache().canSee(target)) {
@@ -1838,7 +1757,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			return;
 		}
 		// 阶段 1 的 17~24 格由声波接管，不吐口水；6~16 格照常吐
-		if (!this.bossForm && this.sonicMode && distanceSquared >= SONIC_MIN_RANGE * SONIC_MIN_RANGE) {
+		double sonicMin = CombatProfile.sonicMinRange(1);
+		if (!this.bossForm && this.sonicMode && distanceSquared >= sonicMin * sonicMin) {
 			return;
 		}
 		this.shootSpit(target, this.spitDamage(), this.spitPiercing(), this.spitKnockback());

@@ -1,5 +1,7 @@
 # 肃静（Hush）· 姚永寿
 
+[![build](https://github.com/hwjsldgj/MC_FirstMob/actions/workflows/build.yml/badge.svg)](https://github.com/hwjsldgj/MC_FirstMob/actions/workflows/build.yml)
+
 Minecraft **1.21.1 Fabric** 模组：新增生物「姚永寿」。
 它长着僵尸的样子，行为却来自羊驼——会寻路、会走近、会吐口水；血量越低越难缠，按 80% / 60% / 30% 分成四个战斗阶段，近战、口水与监守者声波逐级强化。
 
@@ -90,6 +92,7 @@ Minecraft **1.21.1 Fabric** 模组：新增生物「姚永寿」。
 $env:JAVA_HOME='D:\pcl\jdk-21'
 $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 .\gradlew.bat build        # 产物 build/libs/hush-2.0.0.jar
+.\gradlew.bat test         # 纯逻辑单测（阶段表/距离档），不需要进入游戏
 .\gradlew.bat runClient    # 开发客户端，测试世界 run/saves/新的世界
 ```
 

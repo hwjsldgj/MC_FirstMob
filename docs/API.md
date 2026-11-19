@@ -102,17 +102,16 @@ public class Hush implements ModInitializer {
 | `updateMovementSpeed()` | 空闲 III；阶段 1 追逐 I；阶段 2+ 追逐 II；阶段 4 >64 格追逐 III |
 | `updateBossFormRevert()` | 连续 600 tick 无目标退回普通形态 |
 | `updatePhase4Trigger(float)` | 从 >30% 跌破 ≤30% 时触发 3 分钟增益，冷却 1200 tick |
-| `meleeDamage()` / `meleePiercing()` / `spitDamage()` / `spitPiercing()` / `spitKnockback()` / `sonicDamage()` | 阶段数值档案 |
+| `meleeDamage()` / `meleePiercing()` / `spitDamage()` / `spitPiercing()` / `spitKnockback()` / `sonicDamage()` | 阶段数值档案：委托 `com.example.hush.combat.CombatProfile`（纯数值表，不依赖 Minecraft 类，由 `CombatProfileTest` 覆盖） |
 | `spitRangeSquared()` / `sonicMinRangeSquared()` / `sonicAttackMaxRangeSquared()` / `chaseStopRangeSquared()` | 阶段距离档案 |
-| `resolveLockTarget` 取代者 `resolveBossTarget` | 阶段目标解析 |
-| `isLockMode()` | **已移除**；口水穿甲改为发射时写入弹体 |
+| 阶段目标解析 | `resolveBossTarget()` |
 
 阶段 1 保留：`hearVibrationFrom` / `hearSupplement` / `triggerCuriosity` / `updateAngerBehavior` / `updateSonicMode` / 反击计数。
 阶段 2+ 忽略声音。
 
 #### 调试接口
 
-私有常量 `DEBUG`（当前 `true`）控制日志，格式 `[Yao#<id>] <事件>`，事件含 `TRIGGER`、`SHOOT`、`SONIC enter/exit`、`BOSS form enter/exit`、`FORM`、`PHASE4 buff`、`MELEE`、`REGEN`。
+私有常量 `DEBUG` 默认关闭，排查时用系统属性 `-Dhush.debug=true` 打开；格式 `[Yao#<id>] <事件>`，事件含 `TRIGGER`、`SHOOT`、`SONIC enter/exit`、`BOSS form enter/exit`、`FORM`、`PHASE4 buff`、`MELEE`、`REGEN`。
 
 ### 3.3 `YaoYongshouSpitEntity`
 
