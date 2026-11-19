@@ -143,9 +143,11 @@ docs/                               # SPEC / API / 文档索引
 
 ## 提交规范
 
-- 中文提交信息，前缀：`feat:` / `fix:` / `chore:` / `docs:`
+- 中文提交信息，前缀：`feat:` / `fix:` / `chore:` / `docs:` / `ci:`
 - 提交前确认 `git status` 干净、`build` 通过
 - 一次提交只做一件事；文档改动单独用 `docs:` 提交
+- **大改动一律走分支 + PR**：行为/数值、接口、构建与依赖、批量文档这类改动，先开 `feat/*`、`fix/*`、`chore/*`、`docs/*` 分支，分支推上去开 PR，`.github/workflows/build.yml` 绿了再合；`main` 只接受 PR 合并，不在本地直接提交大改动
+- 合并回 `main` 必须走 GitHub PR，不在本地直接 merge
 
 ## 已知限制
 

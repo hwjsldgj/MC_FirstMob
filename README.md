@@ -1,5 +1,7 @@
 # 肃静（Hush）· 姚永寿
 
+[![build](https://github.com/hwjsldgj/MC_FirstMob/actions/workflows/build.yml/badge.svg)](https://github.com/hwjsldgj/MC_FirstMob/actions/workflows/build.yml)
+
 Minecraft **1.21.1 Fabric** 模组：新增生物「姚永寿」。
 它长着僵尸的样子，行为却来自羊驼——会寻路、会走近、会吐口水；血量越低越难缠，按 80% / 60% / 30% 分成四个战斗阶段，近战、口水与监守者声波逐级强化。
 

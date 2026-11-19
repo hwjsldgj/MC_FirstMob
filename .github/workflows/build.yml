@@ -1,0 +1,51 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # gradle.properties 为国内网络把 Loom 指向 BMCLAPI；GitHub Runner 在海外，
+      # 这里改回 Loom 的官方端点，避免 CDN 绕行导致超时。
+      # build 会跑 check + test，CombatProfileTest 挂了这里就红。
+      - name: Build and test
+        run: >
+          ./gradlew build --stacktrace
+          -Ploom_libraries_base=https://maven.fabricmc.net/
+          -Ploom_resources_base=https://resources.download.minecraft.net/
+          -Ploom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+
+      - name: Upload mod jar
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hush-jar
+          path: build/libs/*.jar
+          if-no-files-found: error
