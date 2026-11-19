@@ -108,8 +108,11 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final int SUPPLEMENT_PAIR_TICKS = 2;
 	/** 吐口水冷却：羊驼默认 40 tick，这里减 0.3 秒 = 34 tick。 */
 	private static final int SPIT_COOLDOWN_TICKS = 34;
-	/** 临时诊断日志开关：只记录触发/停火/反击/开炮/声波，定位完就关掉。 */
-	private static final boolean DEBUG = true;
+	/**
+	 * 诊断日志开关：默认关闭，避免正式包刷日志；排查时用系统属性
+	 * {@code -Dhush.debug=true} 打开（实例化前设置，全局生效）。
+	 */
+	private static final boolean DEBUG = Boolean.getBoolean("hush.debug");
 
 	private void debug(String message, Object... args) {
 		if (DEBUG) {
