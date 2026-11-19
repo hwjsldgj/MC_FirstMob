@@ -33,12 +33,14 @@ jobs:
         run: chmod +x gradlew
 
       # gradle.properties 为国内网络把 Loom 指向 BMCLAPI；GitHub Runner 在海外，
-      # 这里改回 Loom 的官方端点，避免 CDN 绕行导致超时。
+      # 这里改回官方端点，避免 CDN 绕行导致超时。
+      # 注意 `loom_libraries_base` 必须是 libraries.minecraft.net：它负责 com.mojang:*
+      # （brigadier、datafixerupper 等），maven.fabricmc.net 并不提供这些构件。
       # build 会跑 check + test，CombatProfileTest 挂了这里就红。
       - name: Build and test
         run: >
           ./gradlew build --stacktrace
-          -Ploom_libraries_base=https://maven.fabricmc.net/
+          -Ploom_libraries_base=https://libraries.minecraft.net/
           -Ploom_resources_base=https://resources.download.minecraft.net/
           -Ploom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
 
