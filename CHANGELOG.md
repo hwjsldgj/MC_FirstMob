@@ -10,6 +10,7 @@
 - `fabric.mod.json` 的 Fabric API 依赖补上最低版本 `>=0.116.17`
 - 忽略 `desktop.ini`，移除历史 `javap` 转储 `se.txt`
 - 新增 GitHub Actions 工作流（`.github/workflows/build.yml`）：PR 与 `main` 推送都跑 `build`（含单测）并上传 jar；合并 `main` 一律走 PR
+- `main` 规则集新增必需状态检查 `build`（`strict=false`）：PR 的 CI 未通过时无法合并
 
 ### 文档
 
