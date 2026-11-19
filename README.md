@@ -90,6 +90,7 @@ Minecraft **1.21.1 Fabric** 模组：新增生物「姚永寿」。
 $env:JAVA_HOME='D:\pcl\jdk-21'
 $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 .\gradlew.bat build        # 产物 build/libs/hush-2.0.0.jar
+.\gradlew.bat test         # 纯逻辑单测（阶段表/距离档），不需要进入游戏
 .\gradlew.bat runClient    # 开发客户端，测试世界 run/saves/新的世界
 ```
 

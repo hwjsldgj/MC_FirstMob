@@ -1,5 +1,21 @@
 # 更新日志
 
+## 未发布
+
+### 工程
+
+- 构建不再写死 JDK 路径：`gradle.properties` 移除 `org.gradle.java.home`，本地与 CI 统一用 `JAVA_HOME` 选择 JDK 21
+- 阶段数值集中到 `com.example.hush.combat.CombatProfile`，实体与 `ModEntities` 改为查表；新增 JUnit 5 单测（`CombatProfileTest`，9 条）
+- 诊断日志默认关闭，排查时用 `-Dhush.debug=true` 打开
+- `fabric.mod.json` 的 Fabric API 依赖补上最低版本 `>=0.116.17`
+- 忽略 `desktop.ini`，移除历史 `javap` 转储 `se.txt`
+
+### 文档
+
+- SPEC：修正阶段 1「停在 8 格」的描述（实际由 `ProjectileAttackGoal` 决定，8 格只在阶段 2~4 生效）
+- API：删除已移除的 `resolveLockTarget` / `isLockMode` 条目，更新 `DEBUG` 说明
+- 清理实体类里过期的注释（愤怒上限、衰减间隔、传送距离、经验值、商队）
+
 ## 2.0.0
 
 ### 破坏性变更

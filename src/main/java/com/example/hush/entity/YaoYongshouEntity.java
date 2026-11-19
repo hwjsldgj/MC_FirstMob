@@ -73,8 +73,8 @@ import net.minecraft.world.World;
 import org.joml.Vector3f;
 
 /**
- * 姚永寿：只保留僵尸的外形（由渲染器负责），
- * 行为完全改用羊驼：寻路、跟随商队、远程吐口水；近距离额外加近战。
+ * 姚永寿：只保留僵尸的外形（由渲染器负责），行为沿用羊驼的普通寻路与吐口水，
+ * 近距离额外加近战；阶段阈值、伤害与距离全部查 {@link CombatProfile}。
  */
 public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** 听觉半径（格）：与羊驼吐口水的最大射程一致，20 格内都算"周围"。 */
@@ -199,13 +199,13 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final TrackedData<Integer> ATTACK_START_AGE = DataTracker.registerData(YaoYongshouEntity.class,
 			TrackedDataHandlerRegistry.INTEGER);
 
-	/** 每个玩家当前的愤怒值（0~90）。 */
+	/** 每个玩家当前的愤怒值（0~100）。 */
 	private final Map<UUID, Integer> angerByPlayer = new HashMap<>();
 	/** 每个玩家最近一次被 GameEvent 命中的 tick：音效只在没有事件配对时作为补充。 */
 	private final Map<UUID, Long> lastGameEventTicks = new HashMap<>();
 	/** 每个玩家最近一次"音效补充"计数的 tick：若 GameEvent 稍后才到，用来回滚这次补充。 */
 	private final Map<UUID, Long> lastSupplementTicks = new HashMap<>();
-	/** 愤怒衰减计时：每 50 tick 全体 -1。 */
+	/** 愤怒衰减计时：每 20 tick 全体 -1（{@link #ANGER_DECAY_INTERVAL_TICKS}）。 */
 	private int angerDecayTimer;
 	/** 好奇：看向声源的位置与截止 tick。 */
 	private Vec3d curiousPos;
@@ -842,7 +842,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	// ------------------------------------------------------------------
-	// 空闲游走：与玩家保持 16 格以上，>36 格传送到约 20 格
+	// 空闲游走：与玩家保持 16 格以上，>48 格传送到侧前方约 20 格
 	// ------------------------------------------------------------------
 
 	/** 空闲（无目标、未变身）时维持 ≥16 格站距：20 格内注视，>20 靠近，<16 后退，>36 传送。 */
@@ -1115,7 +1115,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 	}
 
-	/** Boss 经验：死亡掉落 200 点（原版由击杀者吸收）。 */
+	/** Boss 经验：死亡掉落 {@link #BOSS_XP_REWARD} 点（原版由击杀者吸收）。 */
 	@Override
 	protected int getXpToDrop() {
 		return BOSS_XP_REWARD;

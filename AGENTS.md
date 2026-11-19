@@ -18,7 +18,7 @@ Minecraft **1.21.1 Fabric** 模组「肃静」（`hush`），新增生物「姚�
 
 | 项目 | 值 |
 | --- | --- |
-| JDK | `D:\pcl\jdk-21`（`gradle.properties` 的 `org.gradle.java.home` 指向它） |
+| JDK | `D:\pcl\jdk-21`（用 `JAVA_HOME` 指向它；仓库不写 `org.gradle.java.home`，否则他人机器/CI 会直接构建失败） |
 | Gradle 缓存 | `D:\pcl\gradle_cache`（`GRADLE_USER_HOME`） |
 | Gradle | 9.4.0（Loom 1.15.5 的 `-remap` 插件要求 9.x） |
 | 测试世界 | `run/saves/新的世界` |
@@ -27,6 +27,7 @@ Minecraft **1.21.1 Fabric** 模组「肃静」（`hush`），新增生物「姚�
 $env:JAVA_HOME='D:\pcl\jdk-21'
 $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 .\gradlew.bat build     # 产物 build/libs/hush-2.0.0.jar
+.\gradlew.bat test      # 纯逻辑单测（CombatProfileTest），不需要进入游戏
 .\gradlew.bat runClient # 开发客户端，日志 run/logs/latest.log
 ```
 
@@ -111,7 +112,7 @@ docs/                               # SPEC / API / 文档索引
 
 ## 验证流程
 
-1. `.\gradlew.bat build` 必须 `BUILD SUCCESSFUL`。
+1. ` .\gradlew.bat build` 必须 `BUILD SUCCESSFUL`；其中 `test` 全绿才算过（CI 跑同一条命令）。
 2. `.\gradlew.bat runClient` 起客户端；mixin 注入失败会在启动/进世界时报 `InvalidMixinException`。
 3. 测试命令：
 
