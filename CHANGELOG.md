@@ -16,6 +16,10 @@
 - SPEC：修正阶段 1「停在 8 格」的描述（实际由 `ProjectileAttackGoal` 决定，8 格只在阶段 2~4 生效）
 - API：删除已移除的 `resolveLockTarget` / `isLockMode` 条目，更新 `DEBUG` 说明
 - 清理实体类里过期的注释（愤怒上限、衰减间隔、传送距离、经验值、商队）
+- AGENTS 新增「分支与合并（GitHub）」：记录 `main` ruleset 的禁止删除 / 禁强推 / 必须 PR、0 必需批准、必须解决 review 线程、无 bypass 角色、合并后自动删源分支，以及 `gh pr create` → CI → `gh pr merge` 的标准流程
+- 记录 ruleset 曾开启 `require_last_push_approval` 导致作者无法合并、关闭后恢复 `CLEAN` 的实测结论
+- README 与 AGENTS 的目录结构补充 `combat/CombatProfile.java`、`src/test` 与 `.github/workflows`
+- API 修正 `combatPhaseFor` 的分档描述，并补上 `CombatProfile` 条目
 
 ## 2.0.0
 

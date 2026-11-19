@@ -11,7 +11,7 @@ Minecraft **1.21.1 Fabric** 模组：新增生物「姚永寿」。
 | --- | --- | --- |
 | Minecraft | **1.21.1**（`~1.21.1`） | 只在该版本开发与验证 |
 | Fabric Loader | **≥ 0.20.1** | 低于此版本会被拒绝加载 |
-| Fabric API | `*`（开发/测试用 `0.116.17+1.21.1`） | 必须安装 |
+| Fabric API | **≥ 0.116.17**（开发/测试用 `0.116.17+1.21.1`） | 必须安装 |
 | Java | **≥ 21** | |
 | 安装位置 | 客户端 + 服务端 | 联机时两端都要放 |
 
@@ -120,7 +120,11 @@ src/main/java/com/example/hush
 ├── mixin
 │   ├── PlayerSoundMixin.java        # 补未记录音效
 │   └── LivingEntityArmorMixin.java  # 部分穿甲结算
+├── combat
+│   └── CombatProfile.java           # 四阶段纯数值表（阈值 / 护甲 / 伤害 / 距离）
 └── registry                         # 实体类型、刷怪蛋、音效事件
+
+src/test/java/com/example/hush/combat # JUnit 单测：阶段表与距离档
 
 src/client/java/com/example/hush/client
 ├── HushClient.java                  # 客户端入口
@@ -129,6 +133,7 @@ src/client/java/com/example/hush/client
 
 src/main/resources                  # 贴图、模型、语言、sounds.json、伤害类型
 docs/                               # SPEC / API / 文档索引
+.github/workflows/build.yml         # CI：PR 与 main 推送跑 build（含单测）
 ```
 
 ## 已知限制
