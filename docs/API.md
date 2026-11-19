@@ -95,7 +95,7 @@ public class Hush implements ModInitializer {
 | 成员 | 契约 |
 | --- | --- |
 | `updateFormState()` | 按血量进入 Boss 形态、计算阶段、重算护甲/攻击、维护增益、触发阶段 4 事件 |
-| `combatPhaseFor(float)` | `r≥0.8→1`、`r≥0.6→2`、`r>0.3→3`、否则 4；Boss 形态下限 2 |
+| `combatPhaseFor(float)` | 委托 `CombatProfile.phaseFor`：非 Boss 恒为 1；Boss 形态 `r≥60%→2`、`r>30%→3`、否则 4 |
 | `updateBossCombat(long)` | 阶段 2+：解析目标、按追停距离走位、按距离选择近战/口水/声波/随机档 |
 | `resolveBossTarget()` | 阶段 3/4 优先上次攻击者，其次当前/最近；阶段 2 超 32 格返回 null |
 | `updateBossSonic(PlayerEntity)` | 蓄力 34 tick、循环 160 tick，按阶段伤害开炮 |
@@ -140,6 +140,7 @@ public class Hush implements ModInitializer {
 | `ModEntities` | `YAO_YONGSHOU`、`register()` | 注册类型与默认属性 |
 | `ModItems` | `YAO_YONGSHOU_SPAWN_EGG`、`register()` | 刷怪蛋 |
 | `ModSounds` | 6 个 `SoundEvent`、`register()` | 音效事件 |
+| `CombatProfile` | 阶段阈值、护甲、伤害/穿甲/击退、距离分段的常量与查表方法 | 纯 Java、不依赖 Minecraft；战斗数值的单一来源，由 `CombatProfileTest` 覆盖 |
 
 ### 3.6 客户端
 

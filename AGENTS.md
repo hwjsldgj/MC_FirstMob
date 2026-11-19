@@ -47,10 +47,15 @@ src/main/java/com/example/hush
 ├── mixin
 │   ├── PlayerSoundMixin.java       # 拦 PlayerEntity#playSound，只补未记录音效
 │   └── LivingEntityArmorMixin.java # 把穿甲值从护甲结算中拆出来
-└── registry
-    ├── ModEntities.java            # 实体类型 + 属性
-    ├── ModItems.java               # 刷怪蛋
-    └── ModSounds.java              # 自定义音效事件（转发原版声音，换字幕）
+├── registry
+│   ├── ModEntities.java            # 实体类型 + 属性
+│   ├── ModItems.java               # 刷怪蛋
+│   └── ModSounds.java              # 自定义音效事件（转发原版声音，换字幕）
+└── combat
+    └── CombatProfile.java          # 四阶段纯数值表（阈值/护甲/伤害/距离），有单测
+src/test/java/com/example/hush
+└── combat
+    └── CombatProfileTest.java      # 阶段表与距离档的 JUnit 用例
 src/client/java/com/example/hush/client
 ├── HushClient.java                 # 客户端入口（只注册渲染器）
 ├── YaoYongshouModel.java           # 僵尸骨架 + 僵尸手臂动画
@@ -112,7 +117,7 @@ docs/                               # SPEC / API / 文档索引
 
 ## 验证流程
 
-1. ` .\gradlew.bat build` 必须 `BUILD SUCCESSFUL`；其中 `test` 全绿才算过（CI 跑同一条命令）。
+1. `\gradlew.bat build` 必须 `BUILD SUCCESSFUL`；其中 `test` 全绿才算过（CI 跑同一条命令）。
 2. `.\gradlew.bat runClient` 起客户端；mixin 注入失败会在启动/进世界时报 `InvalidMixinException`。
 3. 测试命令：
 
@@ -140,6 +145,37 @@ docs/                               # SPEC / API / 文档索引
 - **有歧义必须先问**：数值、触发条件、边界值、适用范围有歧义时先提问，不要猜。
 - **启动游戏窗口前先说明**：运行 `runClient` 前用一句话说明是否需要协助，以及 **≤15 字**的启动目的。
 - **及时提交**：一轮改动实现并验证通过后立即提交。
+
+## 分支与合并（GitHub）
+
+仓库 `hwjsldgj/MC_FirstMob`（public），`main` 受 ruleset「main」保护。
+用 `gh api repos/hwjsldgj/MC_FirstMob/rulesets` 查看当前规则，以下为 2026-11-19 的实际配置：
+
+| 规则 | 现状 |
+| --- | --- |
+| 删除 `main` | 禁止 |
+| 非快进推送（强推） | 禁止 |
+| 合并方式 | 必须走 Pull Request |
+| 审查 | 0 个必需批准；必须解决全部 review 线程；最后一次推送需要批准 |
+| 必需状态检查 | **未配置**；约定 CI `build` 绿了再合 |
+| 允许的合并方式 | merge / squash / rebase（实际统一用 merge，保留提交历史） |
+
+标准流程：
+
+```powershell
+git switch -c fix/xxx                 # 大改动一律开分支
+git add -A; git commit -m "fix: ..."   # 一次提交只做一件事
+.\gradlew.bat build                   # 本地先过一遍（含单测）
+git push -u origin fix/xxx
+gh pr create --base main               # 标题与正文用中文，写清改动/验证/未覆盖项
+# 等 PR 上的 build 检查变绿，再合并
+gh pr merge --merge --delete-branch
+git switch main; git pull
+```
+
+- CI 工作流：`.github/workflows/build.yml`，PR 与 `main` push 都触发，JDK 21，执行 `./gradlew build` 并上传 `build/libs/*.jar`。
+- 规则集目前**没有**把 `build` 设为必需检查，所以「CI 绿了再合」靠自觉；闸门要不要加在仓库设置里，不在代码层。
+- PR 正文至少包含：改了什么、怎么验证的、没验证什么。
 
 ## 提交规范
 
