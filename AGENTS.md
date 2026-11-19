@@ -160,6 +160,10 @@ docs/                               # SPEC / API / 文档索引
 | 必需状态检查 | **未配置**；约定 CI `build` 绿了再合 |
 | 允许的合并方式 | merge / squash / rebase（实际统一用 merge，保留提交历史） |
 
+> **实测（PR #2）**：作者账号直接 `gh pr merge` 会被拒绝：`the base branch policy prohibits the merge`。
+> 规则集开启了「要求批准最后一次推送」（`require_last_push_approval`），单账号仓库没人能替作者批准。
+> 可选做法：拉一个协作者账号批准、在规则集里关掉该选项，或用 `--admin` 绕过（会跳过规则，不建议常开）。
+
 标准流程：
 
 ```powershell
