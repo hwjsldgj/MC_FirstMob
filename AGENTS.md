@@ -156,13 +156,14 @@ docs/                               # SPEC / API / 文档索引
 | 删除 `main` | 禁止 |
 | 非快进推送（强推） | 禁止 |
 | 合并方式 | 必须走 Pull Request |
-| 审查 | 0 个必需批准；必须解决全部 review 线程；最后一次推送需要批准 |
+| 审查 | 0 个必需批准；必须解决全部 review 线程；未开启「最后推送需批准」；无 bypass 角色 |
 | 必需状态检查 | **未配置**；约定 CI `build` 绿了再合 |
 | 允许的合并方式 | merge / squash / rebase（实际统一用 merge，保留提交历史） |
+| 合并后删源分支 | 是（`delete_branch_on_merge=true`）；自动合并关闭 |
 
-> **实测（PR #2）**：作者账号直接 `gh pr merge` 会被拒绝：`the base branch policy prohibits the merge`。
-> 规则集开启了「要求批准最后一次推送」（`require_last_push_approval`），单账号仓库没人能替作者批准。
-> 可选做法：拉一个协作者账号批准、在规则集里关掉该选项，或用 `--admin` 绕过（会跳过规则，不建议常开）。
+> **历史实测**：2026-11-19 规则集曾开启 `require_last_push_approval`，作者 `gh pr merge` 被拒：
+> `the base branch policy prohibits the merge`；该选项关闭后恢复 `CLEAN`。
+> 当前 `bypass_actors` 为空、`current_user_can_bypass=never`，`--admin` 也无法绕过。
 
 标准流程：
 
