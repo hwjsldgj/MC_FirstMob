@@ -13,9 +13,8 @@ import com.example.hush.entity.goal.IdleWanderGoal;
 import com.example.hush.entity.goal.LockAwareProjectileAttackGoal;
 import com.example.hush.hearing.AngerLedger;
 import com.example.hush.registry.ModSounds;
+import com.example.hush.visual.EntityParticles;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
@@ -39,8 +38,6 @@ import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
-import net.minecraft.particle.BlockStateParticleEffect;
-import net.minecraft.particle.DustColorTransitionParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.RegistryKey;
@@ -67,7 +64,6 @@ import net.minecraft.world.event.PositionSource;
 import net.minecraft.world.event.Vibrations;
 import net.minecraft.world.event.listener.EntityGameEventHandler;
 import net.minecraft.world.World;
-import org.joml.Vector3f;
 
 /**
  * 姚永寿：只保留僵尸的外形（由渲染器负责），行为沿用羊驼的普通寻路与吐口水，
@@ -151,24 +147,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** 阶段 4 额外增益：跌破 30% 触发，持续 3 分钟，冷却 1 分钟，可重复触发。 */
 	private static final int PHASE_4_BUFF_TICKS = 3600;
 	private static final int PHASE_4_BUFF_COOLDOWN_TICKS = 1200;
-	/** Boss 变身粒子：熔岩橙 → 暗紫的尘团，2 倍体型下也包得住全身。 */
-	private static final int BOSS_FORM_PARTICLE_COUNT = 80;
-	private static final float BOSS_FORM_PARTICLE_SCALE = 1.5F;
-	private static final double BOSS_FORM_PARTICLE_SPREAD = 1.2D;
-	private static final Vector3f BOSS_FORM_PARTICLE_FROM = new Vector3f(1.0F, 0.3F, 0.0F);
-	private static final Vector3f BOSS_FORM_PARTICLE_TO = new Vector3f(0.35F, 0.0F, 0.5F);
-	/** 阶段 4 触发粒子：原版不死图腾同款，在身体中心炸开。 */
-	private static final int PHASE_4_PARTICLE_COUNT = 100;
-	private static final double PHASE_4_PARTICLE_HORIZONTAL_SPREAD = 0.6D;
-	private static final double PHASE_4_PARTICLE_VERTICAL_SPREAD = 1.0D;
-	/** 速度拖尾：任何速度等级（I / II / III）走路都撒烟花，每 4 tick 2 颗，避免 2 倍体型下刷屏。 */
-	private static final int SPEED_TRAIL_PARTICLE_INTERVAL_TICKS = 4;
-	private static final int SPEED_TRAIL_PARTICLE_COUNT = 2;
-	/** "在走路"的判据：脚踩地面且水平速度 > 0.05 格/tick。 */
-	private static final double SPEED_TRAIL_MIN_VELOCITY_SQUARED = 0.0025D;
-	/** 近战命中扬尘：贴在目标脚下，贴图取脚下方块。 */
-	private static final int MELEE_DUST_PARTICLE_COUNT = 6;
-	private static final double MELEE_DUST_PARTICLE_SPREAD = 0.35D;
 	/** 空闲游走：始终保持与玩家至少 16 格；32 格内站定注视，>32 格靠近，>48 格传送，落点约 20 格。 */
 	private static final double IDLE_LOOK_RANGE_SQUARED = 20.0D * 20.0D;
 	private static final double IDLE_KEEP_DISTANCE = 16.0D;
@@ -355,7 +333,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 		this.nextPhase4BuffTick = now + PHASE_4_BUFF_COOLDOWN_TICKS;
 		this.applyPhase4Buffs();
-		this.spawnPhase4Particles();
+		EntityParticles.phase4(this);
 		debug("PHASE4 buff hp={}", this.getHealth());
 	}
 
@@ -370,7 +348,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.phase = Math.max(2, this.combatPhaseFor(this.getHealth() / this.getMaxHealth()));
 		this.updateFormAttributes();
 		this.updatePhaseBuffs();
-		this.spawnBossFormParticles();
+		EntityParticles.bossForm(this);
 		debug("BOSS form enter hp={} phase={}", this.getHealth(), this.phase);
 	}
 
@@ -596,77 +574,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	// 只在服务端生成，由 ServerWorld 广播给追踪者；客户端 tick 提前返回，不会重复生成
 	// ------------------------------------------------------------------
 
-	/** 转 Boss 形态当 tick：熔岩橙 → 暗紫的尘团从身体中心炸开。 */
-	private void spawnBossFormParticles() {
-		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
-			return;
-		}
-		DustColorTransitionParticleEffect effect = new DustColorTransitionParticleEffect(
-				BOSS_FORM_PARTICLE_FROM, BOSS_FORM_PARTICLE_TO, BOSS_FORM_PARTICLE_SCALE);
-		serverWorld.spawnParticles(effect, this.getX(), this.getBodyY(0.5D), this.getZ(),
-				BOSS_FORM_PARTICLE_COUNT, BOSS_FORM_PARTICLE_SPREAD, BOSS_FORM_PARTICLE_SPREAD,
-				BOSS_FORM_PARTICLE_SPREAD, 0.05D);
-	}
-
-	/** 阶段 4 触发当 tick：不死图腾粒子在身体中心炸开。 */
-	private void spawnPhase4Particles() {
-		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
-			return;
-		}
-		serverWorld.spawnParticles(ParticleTypes.TOTEM_OF_UNDYING, this.getX(), this.getBodyY(0.5D), this.getZ(),
-				PHASE_4_PARTICLE_COUNT, PHASE_4_PARTICLE_HORIZONTAL_SPREAD,
-				PHASE_4_PARTICLE_VERTICAL_SPREAD, PHASE_4_PARTICLE_HORIZONTAL_SPREAD, 0.1D);
-	}
-
-	/**
-	 * 有速度效果且在地面走路时在脚下拖烟花。
-	 * <p>速度 I / II / III 都生效（III 是空闲游走的常驻速度）；站着不动（水平速度不够）不拖。
-	 */
-	private void updateSpeedTrailParticles() {
-		if (this.getStatusEffect(StatusEffects.SPEED) == null) {
-			return;
-		}
-		if (this.age % SPEED_TRAIL_PARTICLE_INTERVAL_TICKS != 0) {
-			return;
-		}
-		if (!this.isOnGround()
-				|| this.getVelocity().horizontalLengthSquared() < SPEED_TRAIL_MIN_VELOCITY_SQUARED) {
-			return;
-		}
-		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
-			return;
-		}
-		// 沿身体宽度随机取一点，2 倍体型下也能盖住双脚
-		double offsetX = (this.random.nextDouble() - 0.5D) * this.getWidth();
-		double offsetZ = (this.random.nextDouble() - 0.5D) * this.getWidth();
-		serverWorld.spawnParticles(ParticleTypes.FIREWORK, this.getX() + offsetX, this.getY() + 0.05D,
-				this.getZ() + offsetZ, SPEED_TRAIL_PARTICLE_COUNT, this.getWidth() * 0.1D, 0.02D,
-				this.getWidth() * 0.1D, 0.01D);
-	}
-
-	/** 近战命中：在目标脚下升起一柱尘，贴图取目标脚下方块。 */
-	private void spawnMeleeDustParticles(Entity target) {
-		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
-			return;
-		}
-		BlockPos pos = target.getBlockPos();
-		BlockState state = serverWorld.getBlockState(pos.down());
-		if (isDustPillarInvisible(state)) {
-			state = serverWorld.getBlockState(pos.down(2));
-		}
-		if (isDustPillarInvisible(state)) {
-			state = Blocks.STONE.getDefaultState();
-		}
-		BlockStateParticleEffect effect = new BlockStateParticleEffect(ParticleTypes.DUST_PILLAR, state);
-		serverWorld.spawnParticles(effect, target.getX(), target.getY() + 0.05D, target.getZ(),
-				MELEE_DUST_PARTICLE_COUNT, MELEE_DUST_PARTICLE_SPREAD, 0.05D,
-				MELEE_DUST_PARTICLE_SPREAD, 0.05D);
-	}
-
-	/** dust_pillar 的贴图来自方块模型：空气与流体取不到贴图，会变成空白粒子。 */
-	private static boolean isDustPillarInvisible(BlockState state) {
-		return state.isAir() || !state.getFluidState().isEmpty();
-	}
 
 	// ------------------------------------------------------------------
 	// Boss 阶段（2/3/4）：硬锁玩家，按阶段距离分工
@@ -1462,7 +1369,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.updateBossFormRevert();
 		this.updateOutOfCombatRegen(now);
 		this.updateMovementSpeed();
-		this.updateSpeedTrailParticles();
+		EntityParticles.speedTrail(this);
 		this.updateCuriosityLook(now);
 	}
 
@@ -1814,7 +1721,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		// 命中瞬间记录 age：客户端按渲染插值算进度，动画从这一 tick 平滑开始
 		this.dataTracker.set(ATTACK_START_AGE, this.age);
 		// 命中点的扬尘：dust_pillar 贴在目标脚下，比打在脸上更像"砸出来的"
-		this.spawnMeleeDustParticles(target);
+		EntityParticles.meleeDust(this, target);
 		if (hit && target instanceof LivingEntity livingTarget) {
 			// 命中后向上顶 0.4 × (1 - 击退抗性)，水平方向不额外加
 			double resistance = Math.max(0.0D,
