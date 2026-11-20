@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # 工作流里的 action 全部按 commit SHA 固定（见 .github/workflows/build.yml），
+  # 由 dependabot 每周提 PR 升级 SHA，避免手动跟踪。
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    labels:
+      - ci
+    groups:
+      actions:
+        patterns:
+          - '*'
