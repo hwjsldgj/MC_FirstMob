@@ -94,6 +94,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -107,36 +109,76 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      # 只改文档的 PR 不跑服务端：省一分钟；代码 PR 只是多一次全量 checkout。
+      # 判断失败时 run 保持 true，宁可多跑也不漏跑。
+      - name: Decide whether smoke is needed
+        id: decide
+        run: |
+          run=true
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD" 2>/dev/null || true)
+            if [ -n "$changed" ] && ! echo "$changed" | grep -qvE '^(docs/|.*\.md$)'; then
+              run=false
+              echo "docs-only change, skip smoke"
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
       - name: Prepare headless server
+        if: steps.decide.outputs.run == 'true'
         run: |
           mkdir -p run/smoke/datapacks
           cp -r ci/smoke-datapack run/smoke/datapacks/hush-smoke
           printf 'eula=true\n' > run/eula.txt
-          printf 'level-name=smoke\nonline-mode=false\nmax-tick-time=-1\nspawn-protection=0\n' > run/server.properties
+          printf 'level-name=smoke\nonline-mode=false\nmax-tick-time=-1\nspawn-protection=0\nenable-rcon=true\nrcon.port=25575\nrcon.password=hush-smoke\nbroadcast-rcon-to-ops=false\n' > run/server.properties
 
-      # 冒烟数据包会在启动后 summon 实体、打印标记；服务端由 timeout 收尾。
+      # 冒烟数据包启动后 summon 实体并打印标记；标记出现即通过 RCON 优雅停服，
+      # 不必等超时，整步从 ~3 分钟降到 ~1 分钟。超时只是兜底。
       - name: Run dedicated server
+        if: steps.decide.outputs.run == 'true'
         run: |
-          timeout 180 ./gradlew runServer --console=plain --stacktrace \
+          set -uo pipefail
+          LOG=run/logs/latest.log
+          rm -f "$LOG"
+          (
+            for _ in $(seq 1 120); do
+              if grep -q 'HUSH_SMOKE_DONE' "$LOG" 2>/dev/null; then
+                python3 ci/rcon_stop.py 127.0.0.1 25575 hush-smoke stop && break
+              fi
+              sleep 1
+            done
+          ) &
+          WATCHER=$!
+          set +e
+          timeout 150 ./gradlew runServer --console=plain --stacktrace \
             -Ploom_libraries_base=https://libraries.minecraft.net/ \
             -Ploom_resources_base=https://resources.download.minecraft.net/ \
-            -Ploom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest_v2.json || true
+            -Ploom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+          STATUS=$?
+          set -e
+          wait "$WATCHER" 2>/dev/null || true
+          echo "server_exit=$STATUS"
+          exit "$STATUS"
 
       - name: Assert smoke markers
+        if: steps.decide.outputs.run == 'true'
         run: |
           set -euo pipefail
           LOG=run/logs/latest.log
-          test -f "$LOG"
-          grep -q '\[Hush\] 姚永寿已注册' "$LOG"
-          grep -q 'HUSH_SMOKE_MOB_OK' "$LOG"
-          grep -q 'HUSH_SMOKE_SPIT_OK' "$LOG"
-          ! grep -q 'HUSH_SMOKE_MOB_MISSING' "$LOG"
-          ! grep -q 'HUSH_SMOKE_SPIT_MISSING' "$LOG"
-          ! grep -q 'Unknown or invalid command' "$LOG"
-          ! grep -q 'Failed to load datapack' "$LOG"
+          fail() { echo "::error::$1"; tail -n 60 "$LOG" || true; exit 1; }
+          test -f "$LOG" || fail "server log missing"
+          grep -q '\[Hush\] 姚永寿已注册' "$LOG" || fail "mod did not initialize"
+          grep -q 'HUSH_SMOKE_MOB_OK' "$LOG" || fail "summoned mob missing"
+          grep -q 'HUSH_SMOKE_SPIT_OK' "$LOG" || fail "summoned spit missing"
+          grep -q 'Stopping server' "$LOG" || fail "server did not stop gracefully"
+          ! grep -q 'HUSH_SMOKE_MOB_MISSING' "$LOG" || fail "mob despawned"
+          ! grep -q 'HUSH_SMOKE_SPIT_MISSING' "$LOG" || fail "spit despawned"
+          ! grep -qi 'mixin apply failed' "$LOG" || fail "mixin apply failed"
+          ! grep -q 'Unknown or invalid command' "$LOG" || fail "datapack command invalid"
+          ! grep -q 'Failed to load datapack' "$LOG" || fail "datapack failed to load"
 
       - name: Upload server log
-        if: always()
+        if: always() && steps.decide.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: server-log
