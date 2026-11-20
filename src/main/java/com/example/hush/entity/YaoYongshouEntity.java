@@ -1157,9 +1157,15 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		return best;
 	}
 
-	/** 每 20 tick 全体愤怒 -1，归零的条目移除，并清理过期的听觉记忆。 */
+	/** 每 20 tick 全体愤怒 -1；归零条目、过期记忆与离线玩家一起清理。 */
 	private void decayAnger(long now) {
-		this.ledger.decayIfDue(now, ANGER_DECAY_INTERVAL_TICKS, MINOR_NOISE_COOLDOWN_TICKS);
+		if (!this.ledger.decayIfDue(now, ANGER_DECAY_INTERVAL_TICKS, MINOR_NOISE_COOLDOWN_TICKS)) {
+			return;
+		}
+		// 玩家登出后愤怒不再有意义：保留条目会在长跑服务器上无限增长
+		if (this.getWorld() instanceof ServerWorld serverWorld) {
+			this.ledger.retainPlayers(uuid -> serverWorld.getPlayerByUuid(uuid) != null);
+		}
 	}
 
 	/** 阶段 1 按最高愤怒决定：警觉吐口水、激怒放声波、冷静收手；Boss 阶段由 {@link #updateBossCombat} 接管。 */
