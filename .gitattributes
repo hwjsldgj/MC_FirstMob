@@ -1,9 +1,11 @@
-#
-# https://help.github.com/articles/dealing-with-line-endings/
-#
+# 行尾约定：Linux 脚本必须 LF，Windows 脚本必须 CRLF。
+# 文本属性统一 text，避免 Windows 检出时被 core.autocrlf 改写。
+
 # Linux start script should use lf
 /gradlew        text eol=lf
+# Python 辅助脚本由 Linux CI 的 python3 执行（将来也可能 chmod +x 直接跑），
+# CRLF 会让 shebang 行变成 "bad interpreter"，所以固定 LF。
+*.py            text eol=lf
 
 # These are Windows script files and should use crlf
 *.bat           text eol=crlf
-
