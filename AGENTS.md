@@ -26,7 +26,7 @@ Minecraft **1.21.1 Fabric** 模组「肃静」（`hush`），新增生物「姚�
 ```powershell
 $env:JAVA_HOME='D:\pcl\jdk-21'
 $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
-.\gradlew.bat build     # 产物 build/libs/hush-2.0.0.jar
+.\gradlew.bat build     # 产物 build/libs/hush-0.1.0-SNAPSHOT.jar
 .\gradlew.bat test      # 纯逻辑单测（CombatProfileTest），不需要进入游戏
 .\gradlew.bat runClient # 开发客户端，日志 run/logs/latest.log
 ```
