@@ -18,6 +18,11 @@
 - CI 增加资源校验（JSON 语法 + `zh_cn`/`en_us` 键成对）、`timeout-minutes`、失败时上传测试报告
 - CI 新增 `smoke` job：无头 `runServer` + `ci/smoke-datapack` 启动后 summon 实体，断言 Mixin 与实体注册在加载期无错；日志作为 artifact 上传
 - `smoke` 优化：`HUSH_SMOKE_DONE` 出现后由 `ci/rcon_stop.py` 经 RCON 优雅停服（3m19s → 1m07s），超时降为 150 秒兜底；失败时输出日志尾部；仅改 `docs/**` 或 `*.md` 的 PR 自动跳过冒烟
+- 构建配置减法：移除无发布目标的 `maven-publish` 插件与空 `publishing` 块；Java 版本只由 `options.release = 21` 一处声明
+- 代码清理：删除 `YaoYongshouEntity` 两处悬空 Javadoc（无声明可挂）；`ModEntities` 私有构造器移到类末尾，注册 ID 统一走 `Hush.id(...)`
+- `.gitattributes` 为 `*.py` 固定 LF：避免 Windows 检出后 shebang 变成 `bad interpreter`
+- CI：全部 action 按 commit SHA 固定，`runs-on` 改用 `ubuntu-24.04`，新增 `.github/dependabot.yml` 每周升级 action
+- 文档：`ARCHITECTURE` 不再写死实体行数（绝对值会随改动失效）
 
 ### 文档
 

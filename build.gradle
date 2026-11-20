@@ -1,7 +1,6 @@
 plugins {
     // 对于 Minecraft 1.21.1 等混淆版本，必须使用 -remap 后缀的插件
     id 'net.fabricmc.fabric-loom-remap' version '1.15.5'
-    id 'maven-publish'
 }
 
 repositories {
@@ -54,6 +53,8 @@ processResources {
 	}
 }
 
+// Java 版本只在一处声明：release 已经同时约束源码/字节码与引导类路径，
+// 再写 sourceCompatibility / targetCompatibility 是重复配置。
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = 21
 }
@@ -63,9 +64,6 @@ java {
 	// if it is present.
 	// If you remove this line, sources will not be generated.
 	withSourcesJar()
-
-	sourceCompatibility = JavaVersion.VERSION_21
-	targetCompatibility = JavaVersion.VERSION_21
 }
 
 jar {
@@ -74,22 +72,5 @@ jar {
 
 	from("LICENSE") {
 		rename { "${it}_$projectName"}
-	}
-}
-
-// configure the maven publication
-publishing {
-	publications {
-		create("mavenJava", MavenPublication) {
-			from components.java
-		}
-	}
-
-	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
-	repositories {
-		// Add repositories to publish to here.
-		// Notice: This block does NOT have the same function as the block in the top level.
-		// The repositories here will be used for publishing your artifact, not for
-		// retrieving dependencies.
 	}
 }
