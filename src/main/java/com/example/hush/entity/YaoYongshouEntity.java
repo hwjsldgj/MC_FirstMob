@@ -123,7 +123,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final int REVENGE_TIMEOUT_TICKS = 100;
 	/** 所有阶段的近战接管距离都是 5 格（阶段 1 也放宽到 5 格）。 */
 	private static final double MELEE_RANGE_SQUARED = 25.0D;
-	/** 阶段阈值、伤害、距离分段全部查 {@link CombatProfile}（纯数值表，有单测盖住）。 */
 	/**
 	 * 近战伤害类型：data/hush/damage_type/yao_melee.json。
 	 * <p>`scaling: never` 是必须的——原版 `mob_attack` 在和平难度会被整段清零，
@@ -139,7 +138,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final int BOSS_XP_REWARD = 500;
 	/** Boss 血条同步间隔：每 tick 都刷新会不停发包，10 tick（0.5 秒）足够跟手。 */
 	private static final int BOSS_BAR_INTERVAL_TICKS = 10;
-	/** 体型与护甲数值同样来自 {@link CombatProfile}，这里只保留运行时状态。 */
 	/** 脱战回血：玩家连续 10 秒（200 tick）没造成伤害，且未满血时挂生命恢复 I。 */
 	private static final int OUT_OF_COMBAT_REGEN_TICKS = 200;
 	private static final int OUT_OF_COMBAT_REGEN_AMPLIFIER = 0;
