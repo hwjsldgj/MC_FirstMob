@@ -185,7 +185,10 @@ gh pr merge --merge --delete-branch
 git switch main; git pull
 ```
 
-- CI 工作流：`.github/workflows/build.yml`，PR 与 `main` push 都触发，JDK 21，执行 `./gradlew build` 并上传 `build/libs/*.jar`。
+- CI 工作流：`.github/workflows/build.yml`，PR 与 `main` push 都触发，JDK 21，两个 job：
+  - `build`（必需检查）：JSON/语言键校验 → `./gradlew build`（含单测）→ 上传 `build/libs/*.jar`；失败时上传测试报告。
+  - `smoke`：无头 `runServer`，用 `ci/smoke-datapack` 在启动后 summon 实体并打印 `HUSH_SMOKE_*` 标记，断言 Mixin 与实体注册未在加载时报错；日志作为 artifact 上传。
+- 本地复现冒烟：`mkdir run/smoke/datapacks` → 复制 `ci/smoke-datapack` 进去 → `run/eula.txt` 写 `eula=true` → `server.properties` 设 `level-name=smoke` → `\gradlew.bat runServer`，看 `run/logs/latest.log` 的 `HUSH_SMOKE_DONE`。
 - 规则集已把 `build` 设为必需状态检查（`strict=false`）：PR 的 `build` 没通过就不能合；改工作流时不能改 job 名，否则规则集的 context 对不上，合并会一直卡在 Expected。
 - PR 正文至少包含：改了什么、怎么验证的、没验证什么。
 

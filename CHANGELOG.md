@@ -15,6 +15,8 @@
 - 口水改用自有实体类型 `hush:yao_spit`（原复用 `minecraft:llama_spit`），渲染仍用原版 `LlamaSpitEntityRenderer`；影响与迁移见 `docs/BREAKING.md`
 - 新增 `AngerLedgerTest`（12 例）：愤怒上限、衰减间隔、配对窗口、限频、离线清理；单测总数 21
 - 修复：离线玩家的愤怒与听觉时间戳不再在长跑服务器上无限增长（每 20 tick 衰减时清理）
+- CI 增加资源校验（JSON 语法 + `zh_cn`/`en_us` 键成对）、`timeout-minutes`、失败时上传测试报告
+- CI 新增 `smoke` job：无头 `runServer` + `ci/smoke-datapack` 启动后 summon 实体，断言 Mixin 与实体注册在加载期无错；日志作为 artifact 上传
 
 ### 文档
 
