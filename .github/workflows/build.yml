@@ -9,6 +9,16 @@ on:
 permissions:
   contents: read
 
+# GitHub Runner 在海外：把 Loom 端点改回官方源（本地 gradle.properties 指向 BMCLAPI）。
+# `loom_libraries_base` 必须是 libraries.minecraft.net：它负责 com.mojang:*
+# （brigadier、datafixerupper 等），maven.fabricmc.net 并不提供这些构件。
+# 两个 job 共用一份参数，改地址只改这里。
+env:
+  LOOM_ARGS: >-
+    -Ploom_libraries_base=https://libraries.minecraft.net/
+    -Ploom_resources_base=https://resources.download.minecraft.net/
+    -Ploom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
@@ -55,24 +65,19 @@ jobs:
           print(f'lang keys ok: {len(zh)}')
           PY
 
-      # gradle.properties 为国内网络把 Loom 指向 BMCLAPI；GitHub Runner 在海外，
-      # 这里改回官方端点，避免 CDN 绕行导致超时。
-      # 注意 `loom_libraries_base` 必须是 libraries.minecraft.net：它负责 com.mojang:*
-      # （brigadier、datafixerupper 等），maven.fabricmc.net 并不提供这些构件。
       # build 会跑 check + test，CombatProfileTest / AngerLedgerTest 挂了这里就红。
       - name: Build and test
-        run: >
-          ./gradlew build --stacktrace
-          -Ploom_libraries_base=https://libraries.minecraft.net/
-          -Ploom_resources_base=https://resources.download.minecraft.net/
-          -Ploom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+        run: ./gradlew build --stacktrace $LOOM_ARGS
 
       - name: Upload mod jar
         if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: hush-jar
-          path: build/libs/*.jar
+          # 只发可玩包：-sources.jar 对使用者无意义，排除后 artifact 只有一份主 jar。
+          path: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar
           if-no-files-found: error
 
       - name: Upload test reports
@@ -150,10 +155,7 @@ jobs:
           ) &
           WATCHER=$!
           set +e
-          timeout 150 ./gradlew runServer --console=plain --stacktrace \
-            -Ploom_libraries_base=https://libraries.minecraft.net/ \
-            -Ploom_resources_base=https://resources.download.minecraft.net/ \
-            -Ploom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+          timeout 150 ./gradlew runServer --console=plain --stacktrace $LOOM_ARGS
           STATUS=$?
           set -e
           wait "$WATCHER" 2>/dev/null || true

@@ -23,6 +23,8 @@
 - `.gitattributes` 为 `*.py` 固定 LF：避免 Windows 检出后 shebang 变成 `bad interpreter`
 - CI：全部 action 按 commit SHA 固定，`runs-on` 改用 `ubuntu-24.04`，新增 `.github/dependabot.yml` 每周升级 action
 - 文档：`ARCHITECTURE` 不再写死实体行数（绝对值会随改动失效）
+- 开启 Gradle 构建缓存（`org.gradle.caching=true`）：本地重复构建直接复用，CI 的 `smoke` job 可从 `setup-gradle` 缓存命中编译产物
+- CI 把三个 Loom 端点覆盖参数抽成 workflow 级 `LOOM_ARGS`，`build` 与 `smoke` 共用；`hush-jar` artifact 排除 `-sources.jar`
 
 ### 文档
 
