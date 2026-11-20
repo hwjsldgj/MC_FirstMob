@@ -1,0 +1,24 @@
+# 破坏性变更记录
+
+记录会影响存档、指令、数据包、二次开发或用户既有习惯的改动。**每次破坏性操作必须在此登记**，并同步 `CHANGELOG.md`。纯内部重构（包名、类拆分）若无外部可见影响，也在此留一行，注明「无外部影响」，便于回溯。
+
+## 记录格式
+
+| 日期 | 版本 | 变更 | 影响面 | 迁移方式 |
+| --- | --- | --- | --- | --- |
+
+## 2026-11-20 · 未发布
+
+| 变更 | 影响面 | 迁移方式 |
+| --- | --- | --- |
+| 口水改用自有实体类型 `hush:yao_spit`（原先复用 `minecraft:llama_spit`） | 指令、统计、数据包按类型筛选口水的场景；其他模组对本模组口水的识别 | 用 `@e[type=hush:yao_spit]` 替换 `@e[type=minecraft:llama_spit]`；口水存活时间极短，旧存档无需处理 |
+| AI Goal 由实体内部类拆到 `com.example.hush.entity.goal`（6 个文件） | 二次开发中反射/继承这些 Goal 的代码 | 无外部影响：仍为包内可见，构造参数不变 |
+| 听觉与愤怒计数移入 `com.example.hush.hearing.AngerLedger` | 同上 | 无外部影响：实体对外方法签名不变 |
+| 粒子表现移入 `com.example.hush.visual.EntityParticles` | 同上 | 无外部影响 |
+| 声波节拍移入 `com.example.hush.combat.SonicCycle` | 同上 | 无外部影响 |
+
+## 兼容性说明
+
+- 存档：实体注册 ID、NBT 字段、属性名均未变；口水不落盘，无迁移成本。
+- 资源：`assets/hush`、`data/hush` 下的 ID 与路径未变。
+- 指令：仅口水类型 ID 变化，见上表。
