@@ -17,7 +17,7 @@
 - 修复：离线玩家的愤怒与听觉时间戳不再在长跑服务器上无限增长（每 20 tick 衰减时清理）
 - CI 增加资源校验（JSON 语法 + `zh_cn`/`en_us` 键成对）、`timeout-minutes`、失败时上传测试报告
 - CI 新增 `smoke` job：无头 `runServer` + `ci/smoke-datapack` 启动后 summon 实体，断言 Mixin 与实体注册在加载期无错；日志作为 artifact 上传
-- `smoke` 优化：`HUSH_SMOKE_DONE` 出现后由 `ci/rcon_stop.py` 经 RCON 优雅停服（目标 3 分钟 → 1 分钟级），超时降为 150 秒兜底；失败时输出日志尾部
+- `smoke` 优化：`HUSH_SMOKE_DONE` 出现后由 `ci/rcon_stop.py` 经 RCON 优雅停服（3m19s → 1m07s），超时降为 150 秒兜底；失败时输出日志尾部；仅改 `docs/**` 或 `*.md` 的 PR 自动跳过冒烟
 
 ### 文档
 
