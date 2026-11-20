@@ -33,6 +33,7 @@
 - 清理实体类里过期的注释（愤怒上限、衰减间隔、传送距离、经验值、商队）
 - AGENTS 新增「分支与合并（GitHub）」：记录 `main` ruleset 的禁止删除 / 禁强推 / 必须 PR、0 必需批准、必须解决 review 线程、无 bypass 角色、合并后自动删源分支，以及 `gh pr create` → CI → `gh pr merge` 的标准流程
 - 记录 ruleset 曾开启 `require_last_push_approval` 导致作者无法合并、关闭后恢复 `CLEAN` 的实测结论
+- SPEC 新增 §12「生成方式（待定，未实现）」：记录结构生成／条件生成／定点触发三种候选方案，接入前需确定的问题（唯一性、持久化、SpawnGroup、和平难度、听觉初始状态），以及将来代码位置 `com.example.hush.spawn`
 - README 与 AGENTS 的目录结构补充 `combat/CombatProfile.java`、`src/test` 与 `.github/workflows`
 - API 修正 `combatPhaseFor` 的分档描述，并补上 `CombatProfile` 条目
 - 新增 `docs/COUPLING.md`（原版依赖逐项盘点与必要性判断）、`docs/ARCHITECTURE.md`（包职责与拆分状态）、`docs/BREAKING.md`（破坏性变更与迁移）；`docs/README.md` 索引与 `AGENTS.md` 结构树同步
