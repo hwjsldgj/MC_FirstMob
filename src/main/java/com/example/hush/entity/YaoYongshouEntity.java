@@ -1,6 +1,5 @@
 package com.example.hush.entity;
 
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -8,6 +7,12 @@ import java.util.function.BiConsumer;
 
 import com.example.hush.Hush;
 import com.example.hush.combat.CombatProfile;
+import com.example.hush.entity.goal.CalmLookAroundGoal;
+import com.example.hush.entity.goal.CalmLookAtEntityGoal;
+import com.example.hush.entity.goal.CloseMeleeGoal;
+import com.example.hush.entity.goal.CuriousLookGoal;
+import com.example.hush.entity.goal.IdleWanderGoal;
+import com.example.hush.entity.goal.LockAwareProjectileAttackGoal;
 import com.example.hush.registry.ModSounds;
 
 import net.minecraft.block.BlockState;
@@ -15,13 +20,7 @@ import net.minecraft.block.Blocks;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.ai.goal.Goal;
-import net.minecraft.entity.ai.goal.LookAroundGoal;
-import net.minecraft.entity.ai.goal.LookAtEntityGoal;
-import net.minecraft.entity.ai.goal.MeleeAttackGoal;
-import net.minecraft.entity.ai.goal.ProjectileAttackGoal;
 import net.minecraft.entity.ai.goal.SwimGoal;
-import net.minecraft.entity.ai.goal.WanderAroundFarGoal;
 import net.minecraft.entity.attribute.EntityAttribute;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributes;
@@ -35,7 +34,6 @@ import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.passive.LlamaEntity;
 import net.minecraft.entity.passive.PassiveEntity;
@@ -791,7 +789,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	/** 所有阶段的近战接管距离都是 5 格。 */
-	private double meleeRangeSquared() {
+	public double meleeRangeSquared() {
 		return MELEE_RANGE_SQUARED;
 	}
 
@@ -877,7 +875,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	/** 空闲且与玩家在 16~32 格的合适距离内：站定注视，不再游走。 */
-	private boolean shouldStandStill() {
+	public boolean shouldStandStill() {
 		if (this.bossForm || this.getTarget() != null) {
 			return false;
 		}
@@ -1010,7 +1008,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	/** 声波蓄力已经开始但还没开炮：这段时间不切换近战/口水，先把这一发打完。 */
-	private boolean isSonicCharging() {
+	public boolean isSonicCharging() {
 		if (!this.bossForm) {
 			return this.sonicMode && this.sonicTicks > 0 && this.sonicTicks < SONIC_CHARGE_TICKS;
 		}
@@ -1332,8 +1330,27 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 	}
 
-	private boolean isCurious(long now) {
+	public boolean isCurious(long now) {
 		return now < this.curiousUntil;
+	}
+
+	// ------------------------------------------------------------------
+	// 只读状态查询：供 entity.goal 包的目标读取，不改变实体状态
+	// ------------------------------------------------------------------
+
+	/** 是否处于 Boss 形态。 */
+	public boolean isBossForm() {
+		return this.bossForm;
+	}
+
+	/** 是否处于声波模式（仅阶段 1）。 */
+	public boolean isSonicMode() {
+		return this.sonicMode;
+	}
+
+	/** 最近一次听到声音的位置；从未听到时为 null。 */
+	public Vec3d getCuriousPos() {
+		return this.curiousPos;
 	}
 
 	/**
@@ -1608,7 +1625,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		// 被打时能贴脸还手；目标一退出去就立刻把控制权还给远程
 		this.goalSelector.add(2, new CloseMeleeGoal(this, 1.2, true));
 		// 远程：阶段 1 由原版 Goal 控制走位/口水；Boss 阶段的走位/攻击由 updateBossCombat 接管
-		this.goalSelector.add(3, new LockAwareProjectileAttackGoal(1.25D, SPIT_COOLDOWN_TICKS,
+		this.goalSelector.add(3, new LockAwareProjectileAttackGoal(this, 1.25D, SPIT_COOLDOWN_TICKS,
 				(float) CombatProfile.spitRange(1)));
 		this.goalSelector.add(6, new IdleWanderGoal(this, 1.0D));
 		this.goalSelector.add(7, new CalmLookAtEntityGoal(this));
@@ -1850,141 +1867,5 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			this.countRevengeShot();
 		}
 		return hit;
-	}
-
-	/** 好奇：冷静时只转头看声源；期间把玩家注视/随机张望让开。 */
-	private static class CuriousLookGoal extends Goal {
-		private final YaoYongshouEntity yao;
-
-		CuriousLookGoal(YaoYongshouEntity yao) {
-			this.yao = yao;
-			this.setControls(EnumSet.of(Goal.Control.LOOK));
-		}
-
-		@Override
-		public boolean canStart() {
-			return this.shouldLook();
-		}
-
-		@Override
-		public boolean shouldContinue() {
-			return this.shouldLook();
-		}
-
-		private boolean shouldLook() {
-			return !this.yao.bossForm && !this.yao.sonicMode && this.yao.getTarget() == null
-					&& this.yao.curiousPos != null
-					&& this.yao.isCurious(this.yao.getWorld().getTime());
-		}
-
-		@Override
-		public void tick() {
-			this.yao.getLookControl().lookAt(this.yao.curiousPos.x, this.yao.curiousPos.y,
-					this.yao.curiousPos.z);
-		}
-	}
-
-	private static class CalmLookAtEntityGoal extends LookAtEntityGoal {
-		private final YaoYongshouEntity yao;
-
-		CalmLookAtEntityGoal(YaoYongshouEntity yao) {
-			super(yao, PlayerEntity.class, 8.0F);
-			this.yao = yao;
-		}
-
-		@Override
-		public boolean canStart() {
-			return !this.yao.isCurious(this.yao.getWorld().getTime()) && super.canStart();
-		}
-
-		@Override
-		public boolean shouldContinue() {
-			return !this.yao.isCurious(this.yao.getWorld().getTime()) && super.shouldContinue();
-		}
-	}
-
-	private static class CalmLookAroundGoal extends LookAroundGoal {
-		private final YaoYongshouEntity yao;
-
-		CalmLookAroundGoal(YaoYongshouEntity yao) {
-			super(yao);
-			this.yao = yao;
-		}
-
-		@Override
-		public boolean canStart() {
-			return !this.yao.isCurious(this.yao.getWorld().getTime()) && super.canStart();
-		}
-
-		@Override
-		public boolean shouldContinue() {
-			return !this.yao.isCurious(this.yao.getWorld().getTime()) && super.shouldContinue();
-		}
-	}
-
-	/** 只在贴身距离才触发的近战：优先级 2，进出都由距离把关，不会压制远程吐口水。 */
-	private static class CloseMeleeGoal extends MeleeAttackGoal {
-		CloseMeleeGoal(PathAwareEntity mob, double speed, boolean pauseWhenMobIdle) {
-			super(mob, speed, pauseWhenMobIdle);
-		}
-
-		private boolean targetInMeleeRange() {
-			LivingEntity target = this.mob.getTarget();
-			// 所有阶段都是 5 格近战
-			return target != null && this.mob.squaredDistanceTo(target) <= ((YaoYongshouEntity) this.mob).meleeRangeSquared();
-		}
-
-		private boolean sonicCharging() {
-			return ((YaoYongshouEntity) this.mob).isSonicCharging();
-		}
-
-		@Override
-		public boolean canStart() {
-			// 声波蓄力中不抢控制权：先把这一发打完
-			return !this.sonicCharging() && this.targetInMeleeRange() && super.canStart();
-		}
-
-		@Override
-		public boolean shouldContinue() {
-			// 目标一退出 5 格马上撒手，把控制权还给远程
-			return !this.sonicCharging() && this.targetInMeleeRange() && super.shouldContinue();
-		}
-	}
-
-	/** Boss 阶段的走位/攻击由 updateBossCombat 统一接管，原版远程 AI 只负责盯着目标。 */
-	private final class LockAwareProjectileAttackGoal extends ProjectileAttackGoal {
-		LockAwareProjectileAttackGoal(double speed, int attackInterval, float range) {
-			super(YaoYongshouEntity.this, speed, attackInterval, range);
-		}
-
-		@Override
-		public void tick() {
-			// Boss 阶段的走位与攻击由实体自己接管，只留视线
-			if (!YaoYongshouEntity.this.bossForm) {
-				super.tick();
-				return;
-			}
-			LivingEntity target = YaoYongshouEntity.this.getTarget();
-			if (target != null) {
-				YaoYongshouEntity.this.getLookControl().lookAt(target, 30.0F, 30.0F);
-			}
-		}
-	}
-
-	/** 玩家在 16~20 格的"合适距离"内就站定只看人：把原版游走拦掉。 */
-	private static class IdleWanderGoal extends WanderAroundFarGoal {
-		IdleWanderGoal(PathAwareEntity mob, double speed) {
-			super(mob, speed);
-		}
-
-		@Override
-		public boolean canStart() {
-			return !((YaoYongshouEntity) this.mob).shouldStandStill() && super.canStart();
-		}
-
-		@Override
-		public boolean shouldContinue() {
-			return !((YaoYongshouEntity) this.mob).shouldStandStill() && super.shouldContinue();
-		}
 	}
 }
