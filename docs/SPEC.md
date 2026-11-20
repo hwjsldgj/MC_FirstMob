@@ -136,7 +136,7 @@ Boss 阶段的走位与远程攻击统一由 `updateBossCombat` 接管，远程 
 | 4 | 6 | 4 | 1.4（II） | 6~16 |
 | 4 随机档 | 8 | 0 | 1.4（II） | 17~24 |
 
-- 弹体：`EntityType.LLAMA_SPIT` + `YaoYongshouSpitEntity`；发射时写入伤害/穿甲/击退。
+- 弹体：自有实体类型 `hush:yao_spit`（`ModEntities.YAO_SPIT`）+ `YaoYongshouSpitEntity`；发射时写入伤害/穿甲/击退，渲染复用原版 `LlamaSpitEntityRenderer`。
 - 弹道：出膛点 `(x, eyeY - 0.1, z)`；速度 2.5，散布 0.4；重力补偿 `0.5 × 0.06 × t²`（`t = 水平距离 / 2.5`）。
 - 音效：`hush:entity.yao_yongshou.spit`。
 - 伤害类型 `hush:yao_spit`（`scaling: never`）；穿甲部分由 `YaoArmorPiercingDamageSource` + `LivingEntityArmorMixin` 处理。

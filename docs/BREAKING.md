@@ -15,7 +15,6 @@
 | AI Goal 由实体内部类拆到 `com.example.hush.entity.goal`（6 个文件） | 二次开发中反射/继承这些 Goal 的代码 | 无外部影响：仍为包内可见，构造参数不变 |
 | 听觉与愤怒计数移入 `com.example.hush.hearing.AngerLedger` | 同上 | 无外部影响：实体对外方法签名不变 |
 | 粒子表现移入 `com.example.hush.visual.EntityParticles` | 同上 | 无外部影响 |
-| 声波节拍移入 `com.example.hush.combat.SonicCycle` | 同上 | 无外部影响 |
 
 ## 兼容性说明
 
