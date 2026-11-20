@@ -12,6 +12,7 @@ import com.example.hush.entity.goal.CuriousLookGoal;
 import com.example.hush.entity.goal.IdleWanderGoal;
 import com.example.hush.entity.goal.LockAwareProjectileAttackGoal;
 import com.example.hush.hearing.AngerLedger;
+import com.example.hush.registry.ModEntities;
 import com.example.hush.registry.ModSounds;
 import com.example.hush.visual.EntityParticles;
 
@@ -1671,7 +1672,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		// 开火前先把身体和头都转向玩家
 		this.faceTarget(target);
 
-		YaoYongshouSpitEntity spit = new YaoYongshouSpitEntity(EntityType.LLAMA_SPIT, world);
+		YaoYongshouSpitEntity spit = new YaoYongshouSpitEntity(ModEntities.YAO_SPIT, world);
 		spit.setOwner(this);
 		spit.setAttack(damage, piercing, knockback);
 		spit.setPosition(this.getX(), this.getEyeY() - 0.1, this.getZ());
