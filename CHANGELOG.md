@@ -11,7 +11,7 @@
 - 忽略 `desktop.ini`，移除历史 `javap` 转储 `se.txt`
 - 新增 GitHub Actions 工作流（`.github/workflows/build.yml`）：PR 与 `main` 推送都跑 `build`（含单测）并上传 jar；合并 `main` 一律走 PR
 - `main` 规则集新增必需状态检查 `build`（`strict=false`）：PR 的 CI 未通过时无法合并
-- 实体职责拆分：AI 目标移到 `entity/goal`（6 个文件）、愤怒与听觉计数移到 `hearing/AngerLedger`、粒子移到 `visual/EntityParticles`；`YaoYongshouEntity` 由 1990 行降到 1746 行，行为不变
+- 实体职责拆分：AI 目标移到 `entity/goal`（6 个文件）、愤怒与听觉计数移到 `hearing/AngerLedger`、粒子移到 `visual/EntityParticles`；`YaoYongshouEntity` 由 1990 行降到 1751 行，行为不变
 - 口水改用自有实体类型 `hush:yao_spit`（原复用 `minecraft:llama_spit`），渲染仍用原版 `LlamaSpitEntityRenderer`；影响与迁移见 `docs/BREAKING.md`
 - 新增 `AngerLedgerTest`（12 例）：愤怒上限、衰减间隔、配对窗口、限频、离线清理；单测总数 21
 - 修复：离线玩家的愤怒与听觉时间戳不再在长跑服务器上无限增长（每 20 tick 衰减时清理）
