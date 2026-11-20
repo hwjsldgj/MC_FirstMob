@@ -41,9 +41,14 @@ $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 src/main/java/com/example/hush
 ├── Hush.java                       # 入口：注册实体/物品/音效、加入创造页签
 ├── entity
-│   ├── YaoYongshouEntity.java      # 羊驼行为 + 四阶段战斗 + 振动听觉 + 声波 + 反击
-│   ├── YaoYongshouSpitEntity.java  # 口水：伤害 / 穿甲 / 击退 / 同类免伤
-│   └── YaoArmorPiercingDamageSource.java  # 带穿甲值的伤害源
+│   ├── YaoYongshouEntity.java      # 羊驼行为 + 四阶段战斗 + 振动听觉 + 声波 + 反击（只做编排）
+│   ├── YaoYongshouSpitEntity.java  # 口水：伤害 / 穿甲 / 击退 / 同类免伤（自有类型 hush:yao_spit）
+│   ├── YaoArmorPiercingDamageSource.java  # 带穿甲值的伤害源
+│   └── goal                        # 6 个 AI 目标，各自一个文件
+├── hearing
+│   └── AngerLedger.java            # 愤怒 / 配对窗口 / 限频 / 衰减（纯逻辑，有单测）
+├── visual
+│   └── EntityParticles.java        # 变身、狂怒、拖尾、扬尘粒子（只表现）
 ├── mixin
 │   ├── PlayerSoundMixin.java       # 拦 PlayerEntity#playSound，只补未记录音效
 │   └── LivingEntityArmorMixin.java # 把穿甲值从护甲结算中拆出来
@@ -54,13 +59,15 @@ src/main/java/com/example/hush
 └── combat
     └── CombatProfile.java          # 四阶段纯数值表（阈值/护甲/伤害/距离），有单测
 src/test/java/com/example/hush
-└── combat
-    └── CombatProfileTest.java      # 阶段表与距离档的 JUnit 用例
+├── combat
+│   └── CombatProfileTest.java      # 阶段表与距离档的 JUnit 用例
+└── hearing
+    └── AngerLedgerTest.java        # 愤怒、配对窗口、限频、衰减的 JUnit 用例
 src/client/java/com/example/hush/client
 ├── HushClient.java                 # 客户端入口（只注册渲染器）
 ├── YaoYongshouModel.java           # 僵尸骨架 + 僵尸手臂动画
 └── YaoYongshouRenderer.java        # 僵尸模型渲染器
-docs/                               # SPEC / API / 文档索引
+docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BREAKING / 文档索引
 ```
 
 ## 不变量（改完逐条确认）

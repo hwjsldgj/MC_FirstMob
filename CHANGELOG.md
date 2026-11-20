@@ -11,6 +11,10 @@
 - 忽略 `desktop.ini`，移除历史 `javap` 转储 `se.txt`
 - 新增 GitHub Actions 工作流（`.github/workflows/build.yml`）：PR 与 `main` 推送都跑 `build`（含单测）并上传 jar；合并 `main` 一律走 PR
 - `main` 规则集新增必需状态检查 `build`（`strict=false`）：PR 的 CI 未通过时无法合并
+- 实体职责拆分：AI 目标移到 `entity/goal`（6 个文件）、愤怒与听觉计数移到 `hearing/AngerLedger`、粒子移到 `visual/EntityParticles`；`YaoYongshouEntity` 由 1990 行降到 1746 行，行为不变
+- 口水改用自有实体类型 `hush:yao_spit`（原复用 `minecraft:llama_spit`），渲染仍用原版 `LlamaSpitEntityRenderer`；影响与迁移见 `docs/BREAKING.md`
+- 新增 `AngerLedgerTest`（12 例）：愤怒上限、衰减间隔、配对窗口、限频、离线清理；单测总数 21
+- 修复：离线玩家的愤怒与听觉时间戳不再在长跑服务器上无限增长（每 20 tick 衰减时清理）
 
 ### 文档
 
@@ -21,6 +25,7 @@
 - 记录 ruleset 曾开启 `require_last_push_approval` 导致作者无法合并、关闭后恢复 `CLEAN` 的实测结论
 - README 与 AGENTS 的目录结构补充 `combat/CombatProfile.java`、`src/test` 与 `.github/workflows`
 - API 修正 `combatPhaseFor` 的分档描述，并补上 `CombatProfile` 条目
+- 新增 `docs/COUPLING.md`（原版依赖逐项盘点与必要性判断）、`docs/ARCHITECTURE.md`（包职责与拆分状态）、`docs/BREAKING.md`（破坏性变更与迁移）；`docs/README.md` 索引与 `AGENTS.md` 结构树同步
 
 ## 2.0.0
 
