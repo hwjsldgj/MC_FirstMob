@@ -16,6 +16,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,11 +33,33 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      # 纯静态检查：JSON 语法 + 语言文件键成对。资源错误通常在加载时才炸，
+      # 这一步把它提前到编译阶段，成本只有几秒。
+      - name: Validate resources
+        run: |
+          set -euo pipefail
+          find src -name '*.json' -print0 | while IFS= read -r -d '' f; do
+            jq empty "$f" || { echo "invalid JSON: $f"; exit 1; }
+          done
+          python3 - <<'PY'
+          import json, sys
+          def keys(path):
+              with open(path, encoding='utf-8') as fh:
+                  return set(json.load(fh))
+          zh = keys('src/main/resources/assets/hush/lang/zh_cn.json')
+          en = keys('src/main/resources/assets/hush/lang/en_us.json')
+          diff = zh ^ en
+          if diff:
+              print('lang key mismatch:', sorted(diff))
+              sys.exit(1)
+          print(f'lang keys ok: {len(zh)}')
+          PY
+
       # gradle.properties 为国内网络把 Loom 指向 BMCLAPI；GitHub Runner 在海外，
       # 这里改回官方端点，避免 CDN 绕行导致超时。
       # 注意 `loom_libraries_base` 必须是 libraries.minecraft.net：它负责 com.mojang:*
       # （brigadier、datafixerupper 等），maven.fabricmc.net 并不提供这些构件。
-      # build 会跑 check + test，CombatProfileTest 挂了这里就红。
+      # build 会跑 check + test，CombatProfileTest / AngerLedgerTest 挂了这里就红。
       - name: Build and test
         run: >
           ./gradlew build --stacktrace
@@ -51,3 +74,71 @@ jobs:
           name: hush-jar
           path: build/libs/*.jar
           if-no-files-found: error
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests
+            build/test-results
+          if-no-files-found: ignore
+
+  # 无头服务端冒烟：编译通过不代表能加载。Mixin 目标、实体类型注册、数据包命令
+  # 都只在运行时校验，这一 job 把「启动即崩」暴露在 PR 上。
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Prepare headless server
+        run: |
+          mkdir -p run/smoke/datapacks
+          cp -r ci/smoke-datapack run/smoke/datapacks/hush-smoke
+          printf 'eula=true\n' > run/eula.txt
+          printf 'level-name=smoke\nonline-mode=false\nmax-tick-time=-1\nspawn-protection=0\n' > run/server.properties
+
+      # 冒烟数据包会在启动后 summon 实体、打印标记；服务端由 timeout 收尾。
+      - name: Run dedicated server
+        run: |
+          timeout 180 ./gradlew runServer --console=plain --stacktrace \
+            -Ploom_libraries_base=https://libraries.minecraft.net/ \
+            -Ploom_resources_base=https://resources.download.minecraft.net/ \
+            -Ploom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest_v2.json || true
+
+      - name: Assert smoke markers
+        run: |
+          set -euo pipefail
+          LOG=run/logs/latest.log
+          test -f "$LOG"
+          grep -q '\[Hush\] 姚永寿已注册' "$LOG"
+          grep -q 'HUSH_SMOKE_MOB_OK' "$LOG"
+          grep -q 'HUSH_SMOKE_SPIT_OK' "$LOG"
+          ! grep -q 'HUSH_SMOKE_MOB_MISSING' "$LOG"
+          ! grep -q 'HUSH_SMOKE_SPIT_MISSING' "$LOG"
+          ! grep -q 'Unknown or invalid command' "$LOG"
+          ! grep -q 'Failed to load datapack' "$LOG"
+
+      - name: Upload server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-log
+          path: run/logs/latest.log
+          if-no-files-found: warn
