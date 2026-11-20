@@ -37,13 +37,13 @@
 - API 修正 `combatPhaseFor` 的分档描述，并补上 `CombatProfile` 条目
 - 新增 `docs/COUPLING.md`（原版依赖逐项盘点与必要性判断）、`docs/ARCHITECTURE.md`（包职责与拆分状态）、`docs/BREAKING.md`（破坏性变更与迁移）；`docs/README.md` 索引与 `AGENTS.md` 结构树同步
 
-## 2.0.0
+## 四阶段重做（开发阶段记录）
 
 ### 破坏性变更
 
 - 模组改名为「肃静」，Mod ID 由 `firstmob` 改为 `hush`；Java 包改为 `com.example.hush`，入口类改为 `Hush` / `HushClient`，资源命名空间改为 `assets/hush`、`data/hush`
 - 注册 ID 变为 `hush:yao_yongshou`、`hush:yao_yongshou_spawn_egg`、`hush:entity.yao_yongshou.*`、`hush:yao_spit`、`hush:yao_melee`；旧存档中的 `firstmob:` 实体不再注册，需要重新召唤
-- 版本号升到 `2.0.0`，产物 `build/libs/hush-2.0.0.jar`
+- 版本号不再写成发布号，构建物统一为 `0.1.0-SNAPSHOT`（`build/libs/hush-0.1.0-SNAPSHOT.jar`）
 
 ### 新增
 
@@ -72,7 +72,7 @@
 
 ## 未发布
 
-> 以下为 2.0.0 之前的未发布改动，其中部分数值已被 2.0.0 的四阶段规则取代。
+> 以下为四阶段重做之前的未发布改动，其中部分数值已被现行四阶段规则取代。
 
 ### 修复
 
@@ -128,7 +128,7 @@
 - `README.md` 增加「支持的版本」表（与 `fabric.mod.json` 的 `depends` 同步：Minecraft `~1.21.1`、Fabric Loader ≥ 0.20.1、Java ≥ 21、双端安装），玩法速览按基础 / 血量阶段 / 战斗 / 攻击距离速查 / 其他重排并补齐机制
 - 精简 `AGENTS.md`：删除与 SPEC 重复的行为细节，保留环境、结构、不变量、踩坑、验证与提交规范
 
-## 1.0.0
+## 初始开发版（开发阶段记录）
 
 ### 新增
 
