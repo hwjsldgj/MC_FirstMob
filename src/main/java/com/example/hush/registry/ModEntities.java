@@ -3,6 +3,7 @@ package com.example.hush.registry;
 import com.example.hush.Hush;
 import com.example.hush.combat.CombatProfile;
 import com.example.hush.entity.YaoYongshouEntity;
+import com.example.hush.entity.YaoYongshouSpitEntity;
 
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
 import net.minecraft.entity.EntityType;
@@ -29,6 +30,19 @@ public final class ModEntities {
 
 	private ModEntities() {
 	}
+	/**
+	 * 口水：自有实体类型，物理与渲染沿用原版羊驼口水（尺寸、追踪参数照抄原版）。
+	 * <p>不再复用 {@code minecraft:llama_spit}，避免与真正的羊驼口水混淆。
+	 */
+	public static final EntityType<YaoYongshouSpitEntity> YAO_SPIT = Registry.register(
+			Registries.ENTITY_TYPE,
+			Identifier.of(Hush.MOD_ID, "yao_spit"),
+			EntityType.Builder.<YaoYongshouSpitEntity>create(YaoYongshouSpitEntity::new, SpawnGroup.MISC)
+					.dimensions(0.25F, 0.25F)
+					.maxTrackingRange(4)
+					.trackingTickInterval(10)
+					.build("yao_spit")
+	);
 
 	public static void register() {
 		// 羊驼属性 + 血量/普通形态体型护甲 + 近战攻击力/击退（羊驼默认没有 attack_damage，调用近战会崩）。

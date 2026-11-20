@@ -122,7 +122,7 @@ public class Hush implements ModInitializer {
 | `DAMAGE_TYPE` | `hush:yao_spit` |
 | `setAttack(float damage, float piercing, double knockback)` | 由发射方按阶段写入 |
 | `onEntityHit` | 客户端返回；同类/发射者/非生物不结算；伤害走 `YaoArmorPiercingDamageSource`；击退按写入值 |
-| 弹体归属 | 复用 `EntityType.LLAMA_SPIT`，用 `getOwner()` 判断来源 |
+| 弹体归属 | 自有实体类型 `hush:yao_spit`（`ModEntities.YAO_SPIT`），用 `getOwner()` 判断来源；渲染复用原版 `LlamaSpitEntityRenderer` |
 
 ### 3.4 `YaoArmorPiercingDamageSource`
 
@@ -146,7 +146,7 @@ public class Hush implements ModInitializer {
 
 | 类 | 说明 |
 | --- | --- |
-| `HushClient` | 注册渲染器 |
+| `HushClient` | 注册渲染器：`hush:yao_yongshou` 与 `hush:yao_spit` |
 | `YaoYongshouRenderer` | `MobEntityRenderer`，阴影 0.5，原版僵尸贴图，`EntityModelLayers.ZOMBIE` |
 | `YaoYongshouModel` | `BipedEntityModel`；待机双臂前伸，命中时三段插值抡臂 |
 

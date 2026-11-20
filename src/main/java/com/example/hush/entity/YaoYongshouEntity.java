@@ -1,27 +1,25 @@
 package com.example.hush.entity;
 
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 
 import com.example.hush.Hush;
 import com.example.hush.combat.CombatProfile;
+import com.example.hush.entity.goal.CalmLookAroundGoal;
+import com.example.hush.entity.goal.CalmLookAtEntityGoal;
+import com.example.hush.entity.goal.CloseMeleeGoal;
+import com.example.hush.entity.goal.CuriousLookGoal;
+import com.example.hush.entity.goal.IdleWanderGoal;
+import com.example.hush.entity.goal.LockAwareProjectileAttackGoal;
+import com.example.hush.hearing.AngerLedger;
+import com.example.hush.registry.ModEntities;
 import com.example.hush.registry.ModSounds;
+import com.example.hush.visual.EntityParticles;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.ai.goal.Goal;
-import net.minecraft.entity.ai.goal.LookAroundGoal;
-import net.minecraft.entity.ai.goal.LookAtEntityGoal;
-import net.minecraft.entity.ai.goal.MeleeAttackGoal;
-import net.minecraft.entity.ai.goal.ProjectileAttackGoal;
 import net.minecraft.entity.ai.goal.SwimGoal;
-import net.minecraft.entity.ai.goal.WanderAroundFarGoal;
 import net.minecraft.entity.attribute.EntityAttribute;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributes;
@@ -35,15 +33,12 @@ import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.passive.LlamaEntity;
 import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
-import net.minecraft.particle.BlockStateParticleEffect;
-import net.minecraft.particle.DustColorTransitionParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.RegistryKey;
@@ -70,7 +65,6 @@ import net.minecraft.world.event.PositionSource;
 import net.minecraft.world.event.Vibrations;
 import net.minecraft.world.event.listener.EntityGameEventHandler;
 import net.minecraft.world.World;
-import org.joml.Vector3f;
 
 /**
  * 姚永寿：只保留僵尸的外形（由渲染器负责），行为沿用羊驼的普通寻路与吐口水，
@@ -154,24 +148,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** 阶段 4 额外增益：跌破 30% 触发，持续 3 分钟，冷却 1 分钟，可重复触发。 */
 	private static final int PHASE_4_BUFF_TICKS = 3600;
 	private static final int PHASE_4_BUFF_COOLDOWN_TICKS = 1200;
-	/** Boss 变身粒子：熔岩橙 → 暗紫的尘团，2 倍体型下也包得住全身。 */
-	private static final int BOSS_FORM_PARTICLE_COUNT = 80;
-	private static final float BOSS_FORM_PARTICLE_SCALE = 1.5F;
-	private static final double BOSS_FORM_PARTICLE_SPREAD = 1.2D;
-	private static final Vector3f BOSS_FORM_PARTICLE_FROM = new Vector3f(1.0F, 0.3F, 0.0F);
-	private static final Vector3f BOSS_FORM_PARTICLE_TO = new Vector3f(0.35F, 0.0F, 0.5F);
-	/** 阶段 4 触发粒子：原版不死图腾同款，在身体中心炸开。 */
-	private static final int PHASE_4_PARTICLE_COUNT = 100;
-	private static final double PHASE_4_PARTICLE_HORIZONTAL_SPREAD = 0.6D;
-	private static final double PHASE_4_PARTICLE_VERTICAL_SPREAD = 1.0D;
-	/** 速度拖尾：任何速度等级（I / II / III）走路都撒烟花，每 4 tick 2 颗，避免 2 倍体型下刷屏。 */
-	private static final int SPEED_TRAIL_PARTICLE_INTERVAL_TICKS = 4;
-	private static final int SPEED_TRAIL_PARTICLE_COUNT = 2;
-	/** "在走路"的判据：脚踩地面且水平速度 > 0.05 格/tick。 */
-	private static final double SPEED_TRAIL_MIN_VELOCITY_SQUARED = 0.0025D;
-	/** 近战命中扬尘：贴在目标脚下，贴图取脚下方块。 */
-	private static final int MELEE_DUST_PARTICLE_COUNT = 6;
-	private static final double MELEE_DUST_PARTICLE_SPREAD = 0.35D;
 	/** 空闲游走：始终保持与玩家至少 16 格；32 格内站定注视，>32 格靠近，>48 格传送，落点约 20 格。 */
 	private static final double IDLE_LOOK_RANGE_SQUARED = 20.0D * 20.0D;
 	private static final double IDLE_KEEP_DISTANCE = 16.0D;
@@ -199,14 +175,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final TrackedData<Integer> ATTACK_START_AGE = DataTracker.registerData(YaoYongshouEntity.class,
 			TrackedDataHandlerRegistry.INTEGER);
 
-	/** 每个玩家当前的愤怒值（0~100）。 */
-	private final Map<UUID, Integer> angerByPlayer = new HashMap<>();
-	/** 每个玩家最近一次被 GameEvent 命中的 tick：音效只在没有事件配对时作为补充。 */
-	private final Map<UUID, Long> lastGameEventTicks = new HashMap<>();
-	/** 每个玩家最近一次"音效补充"计数的 tick：若 GameEvent 稍后才到，用来回滚这次补充。 */
-	private final Map<UUID, Long> lastSupplementTicks = new HashMap<>();
-	/** 愤怒衰减计时：每 20 tick 全体 -1（{@link #ANGER_DECAY_INTERVAL_TICKS}）。 */
-	private int angerDecayTimer;
+	/** 愤怒、听觉配对与限频的账本：纯逻辑，有单测（AngerLedgerTest）。 */
+	private final AngerLedger ledger = new AngerLedger();
 	/** 好奇：看向声源的位置与截止 tick。 */
 	private Vec3d curiousPos;
 	private long curiousUntil;
@@ -217,10 +187,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private final Vibrations.ListenerData vibrationListenerData = new Vibrations.ListenerData();
 	private final Vibrations.Callback vibrationCallback;
 	private final EntityGameEventHandler<Vibrations.VibrationListener> gameEventHandler;
-	/** 每个玩家上一次走路 / 跳跃 / 受击发声的 tick，用来在 5 秒窗口内各限一次。 */
-	private final Map<UUID, Long> lastWalkTicks = new HashMap<>();
-	private final Map<UUID, Long> lastJumpTicks = new HashMap<>();
-	private final Map<UUID, Long> lastHurtTicks = new HashMap<>();
 	/** 挨打反击模式：只打回去，计数用完就收手（不无限追）。 */
 	private boolean revengeMode;
 	/** 本轮反击还剩几次攻击。 */
@@ -368,7 +334,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 		this.nextPhase4BuffTick = now + PHASE_4_BUFF_COOLDOWN_TICKS;
 		this.applyPhase4Buffs();
-		this.spawnPhase4Particles();
+		EntityParticles.phase4(this);
 		debug("PHASE4 buff hp={}", this.getHealth());
 	}
 
@@ -383,7 +349,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.phase = Math.max(2, this.combatPhaseFor(this.getHealth() / this.getMaxHealth()));
 		this.updateFormAttributes();
 		this.updatePhaseBuffs();
-		this.spawnBossFormParticles();
+		EntityParticles.bossForm(this);
 		debug("BOSS form enter hp={} phase={}", this.getHealth(), this.phase);
 	}
 
@@ -401,9 +367,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR_TOUGHNESS, CombatProfile.ARMOR_TOUGHNESS);
 		this.removePhaseBuffs();
 		// Boss 期间强制的满愤怒不带到普通形态，避免一退回就接着放声波
-		this.angerByPlayer.clear();
-		this.lastGameEventTicks.clear();
-		this.lastSupplementTicks.clear();
+		this.ledger.clearHearing();
 		this.bossBar.setVisible(false);
 		debug("BOSS form exit hp={} armor={}", this.getHealth(),
 				this.getAttributeValue(EntityAttributes.GENERIC_ARMOR));
@@ -611,77 +575,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	// 只在服务端生成，由 ServerWorld 广播给追踪者；客户端 tick 提前返回，不会重复生成
 	// ------------------------------------------------------------------
 
-	/** 转 Boss 形态当 tick：熔岩橙 → 暗紫的尘团从身体中心炸开。 */
-	private void spawnBossFormParticles() {
-		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
-			return;
-		}
-		DustColorTransitionParticleEffect effect = new DustColorTransitionParticleEffect(
-				BOSS_FORM_PARTICLE_FROM, BOSS_FORM_PARTICLE_TO, BOSS_FORM_PARTICLE_SCALE);
-		serverWorld.spawnParticles(effect, this.getX(), this.getBodyY(0.5D), this.getZ(),
-				BOSS_FORM_PARTICLE_COUNT, BOSS_FORM_PARTICLE_SPREAD, BOSS_FORM_PARTICLE_SPREAD,
-				BOSS_FORM_PARTICLE_SPREAD, 0.05D);
-	}
-
-	/** 阶段 4 触发当 tick：不死图腾粒子在身体中心炸开。 */
-	private void spawnPhase4Particles() {
-		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
-			return;
-		}
-		serverWorld.spawnParticles(ParticleTypes.TOTEM_OF_UNDYING, this.getX(), this.getBodyY(0.5D), this.getZ(),
-				PHASE_4_PARTICLE_COUNT, PHASE_4_PARTICLE_HORIZONTAL_SPREAD,
-				PHASE_4_PARTICLE_VERTICAL_SPREAD, PHASE_4_PARTICLE_HORIZONTAL_SPREAD, 0.1D);
-	}
-
-	/**
-	 * 有速度效果且在地面走路时在脚下拖烟花。
-	 * <p>速度 I / II / III 都生效（III 是空闲游走的常驻速度）；站着不动（水平速度不够）不拖。
-	 */
-	private void updateSpeedTrailParticles() {
-		if (this.getStatusEffect(StatusEffects.SPEED) == null) {
-			return;
-		}
-		if (this.age % SPEED_TRAIL_PARTICLE_INTERVAL_TICKS != 0) {
-			return;
-		}
-		if (!this.isOnGround()
-				|| this.getVelocity().horizontalLengthSquared() < SPEED_TRAIL_MIN_VELOCITY_SQUARED) {
-			return;
-		}
-		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
-			return;
-		}
-		// 沿身体宽度随机取一点，2 倍体型下也能盖住双脚
-		double offsetX = (this.random.nextDouble() - 0.5D) * this.getWidth();
-		double offsetZ = (this.random.nextDouble() - 0.5D) * this.getWidth();
-		serverWorld.spawnParticles(ParticleTypes.FIREWORK, this.getX() + offsetX, this.getY() + 0.05D,
-				this.getZ() + offsetZ, SPEED_TRAIL_PARTICLE_COUNT, this.getWidth() * 0.1D, 0.02D,
-				this.getWidth() * 0.1D, 0.01D);
-	}
-
-	/** 近战命中：在目标脚下升起一柱尘，贴图取目标脚下方块。 */
-	private void spawnMeleeDustParticles(Entity target) {
-		if (!(this.getWorld() instanceof ServerWorld serverWorld)) {
-			return;
-		}
-		BlockPos pos = target.getBlockPos();
-		BlockState state = serverWorld.getBlockState(pos.down());
-		if (isDustPillarInvisible(state)) {
-			state = serverWorld.getBlockState(pos.down(2));
-		}
-		if (isDustPillarInvisible(state)) {
-			state = Blocks.STONE.getDefaultState();
-		}
-		BlockStateParticleEffect effect = new BlockStateParticleEffect(ParticleTypes.DUST_PILLAR, state);
-		serverWorld.spawnParticles(effect, target.getX(), target.getY() + 0.05D, target.getZ(),
-				MELEE_DUST_PARTICLE_COUNT, MELEE_DUST_PARTICLE_SPREAD, 0.05D,
-				MELEE_DUST_PARTICLE_SPREAD, 0.05D);
-	}
-
-	/** dust_pillar 的贴图来自方块模型：空气与流体取不到贴图，会变成空白粒子。 */
-	private static boolean isDustPillarInvisible(BlockState state) {
-		return state.isAir() || !state.getFluidState().isEmpty();
-	}
 
 	// ------------------------------------------------------------------
 	// Boss 阶段（2/3/4）：硬锁玩家，按阶段距离分工
@@ -791,7 +684,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	/** 所有阶段的近战接管距离都是 5 格。 */
-	private double meleeRangeSquared() {
+	public double meleeRangeSquared() {
 		return MELEE_RANGE_SQUARED;
 	}
 
@@ -877,7 +770,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	/** 空闲且与玩家在 16~32 格的合适距离内：站定注视，不再游走。 */
-	private boolean shouldStandStill() {
+	public boolean shouldStandStill() {
 		if (this.bossForm || this.getTarget() != null) {
 			return false;
 		}
@@ -1010,7 +903,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	/** 声波蓄力已经开始但还没开炮：这段时间不切换近战/口水，先把这一发打完。 */
-	private boolean isSonicCharging() {
+	public boolean isSonicCharging() {
 		if (!this.bossForm) {
 			return this.sonicMode && this.sonicTicks > 0 && this.sonicTicks < SONIC_CHARGE_TICKS;
 		}
@@ -1184,18 +1077,12 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 
 	/** 该玩家最近是否被本实体的振动监听器接收过 GameEvent。 */
 	private boolean wasGameEventHeardRecently(PlayerEntity player) {
-		Long last = this.lastGameEventTicks.get(player.getUuid());
-		return last != null && this.getWorld().getTime() - last.longValue() <= SUPPLEMENT_PAIR_TICKS;
+		return this.ledger.wasEventHeardRecently(player.getUuid(), this.getWorld().getTime(), SUPPLEMENT_PAIR_TICKS);
 	}
 
 	/** 音效先到、GameEvent 后到：把刚才那次音效补充的愤怒撤回，避免一次动作算两次。 */
 	private void undoSupplementIfAny(PlayerEntity player, long now) {
-		Long last = this.lastSupplementTicks.remove(player.getUuid());
-		if (last == null || now - last.longValue() > SUPPLEMENT_PAIR_TICKS) {
-			return;
-		}
-		this.angerByPlayer.computeIfPresent(player.getUuid(),
-				(uuid, anger) -> Math.max(0, anger - ANGER_PER_LOUD_NOISE));
+		this.ledger.rollbackSupplement(player.getUuid(), now, SUPPLEMENT_PAIR_TICKS, ANGER_PER_LOUD_NOISE);
 	}
 
 	/** 振动通道：按事件类型分大/小噪音，并记录声源位置供好奇使用。 */
@@ -1205,13 +1092,11 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 		long now = this.getWorld().getTime();
 		if (kind != NOISE_LOUD) {
-			Map<UUID, Long> lastTicks = kind == NOISE_WALK ? this.lastWalkTicks
-					: (kind == NOISE_JUMP ? this.lastJumpTicks : this.lastHurtTicks);
-			Long last = lastTicks.get(player.getUuid());
-			if (last != null && now - last.longValue() < MINOR_NOISE_COOLDOWN_TICKS) {
+			AngerLedger.Noise noise = kind == NOISE_WALK ? AngerLedger.Noise.WALK
+					: (kind == NOISE_JUMP ? AngerLedger.Noise.JUMP : AngerLedger.Noise.HURT);
+			if (!this.ledger.allowMinorNoise(noise, player.getUuid(), now, MINOR_NOISE_COOLDOWN_TICKS)) {
 				return;
 			}
-			lastTicks.put(player.getUuid(), now);
 		}
 		this.addAnger(player, kind == NOISE_LOUD ? ANGER_PER_LOUD_NOISE : ANGER_PER_MINOR_NOISE);
 		this.triggerCuriosity(pos, now);
@@ -1224,7 +1109,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			return;
 		}
 		long now = this.getWorld().getTime();
-		this.lastSupplementTicks.put(player.getUuid(), now);
+		this.ledger.markSupplement(player.getUuid(), now);
 		this.addAnger(player, ANGER_PER_LOUD_NOISE);
 		this.triggerCuriosity(Vec3d.ofCenter(player.getBlockPos()), now);
 		this.updateAngerBehavior(now);
@@ -1244,12 +1129,11 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	private void addAnger(PlayerEntity player, int amount) {
-		int anger = Math.min(ANGER_MAX, this.getAnger(player) + amount);
-		this.angerByPlayer.put(player.getUuid(), anger);
+		this.ledger.addAnger(player.getUuid(), amount);
 	}
 
 	private int getAnger(PlayerEntity player) {
-		return this.angerByPlayer.getOrDefault(player.getUuid(), 0);
+		return this.ledger.anger(player.getUuid());
 	}
 
 	/** 当前愤怒最高的存活玩家；同分取最近。 */
@@ -1257,15 +1141,12 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		PlayerEntity best = null;
 		int bestAnger = 0;
 		double bestDistance = Double.MAX_VALUE;
-		for (Map.Entry<UUID, Integer> entry : this.angerByPlayer.entrySet()) {
-			int anger = entry.getValue();
-			if (anger <= 0) {
-				continue;
-			}
-			PlayerEntity player = this.getWorld().getPlayerByUuid(entry.getKey());
+		for (UUID uuid : this.ledger.angeredPlayers()) {
+			PlayerEntity player = this.getWorld().getPlayerByUuid(uuid);
 			if (player == null || !player.isAlive() || player.isSpectator()) {
 				continue;
 			}
+			int anger = this.ledger.anger(uuid);
 			double distance = this.squaredDistanceTo(player);
 			if (anger > bestAnger || (anger == bestAnger && distance < bestDistance)) {
 				best = player;
@@ -1276,18 +1157,15 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		return best;
 	}
 
-	/** 每 20 tick 全体愤怒 -1，归零的条目移除。 */
+	/** 每 20 tick 全体愤怒 -1；归零条目、过期记忆与离线玩家一起清理。 */
 	private void decayAnger(long now) {
-		if (++this.angerDecayTimer < ANGER_DECAY_INTERVAL_TICKS) {
+		if (!this.ledger.decayIfDue(now, ANGER_DECAY_INTERVAL_TICKS, MINOR_NOISE_COOLDOWN_TICKS)) {
 			return;
 		}
-		this.angerDecayTimer = 0;
-		this.angerByPlayer.entrySet().removeIf(entry -> entry.getValue() <= 1);
-		this.angerByPlayer.replaceAll((uuid, anger) -> anger - 1);
-		this.lastGameEventTicks.entrySet()
-				.removeIf(entry -> now - entry.getValue().longValue() > MINOR_NOISE_COOLDOWN_TICKS);
-		this.lastSupplementTicks.entrySet()
-				.removeIf(entry -> now - entry.getValue().longValue() > MINOR_NOISE_COOLDOWN_TICKS);
+		// 玩家登出后愤怒不再有意义：保留条目会在长跑服务器上无限增长
+		if (this.getWorld() instanceof ServerWorld serverWorld) {
+			this.ledger.retainPlayers(uuid -> serverWorld.getPlayerByUuid(uuid) != null);
+		}
 	}
 
 	/** 阶段 1 按最高愤怒决定：警觉吐口水、激怒放声波、冷静收手；Boss 阶段由 {@link #updateBossCombat} 接管。 */
@@ -1332,8 +1210,27 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 	}
 
-	private boolean isCurious(long now) {
+	public boolean isCurious(long now) {
 		return now < this.curiousUntil;
+	}
+
+	// ------------------------------------------------------------------
+	// 只读状态查询：供 entity.goal 包的目标读取，不改变实体状态
+	// ------------------------------------------------------------------
+
+	/** 是否处于 Boss 形态。 */
+	public boolean isBossForm() {
+		return this.bossForm;
+	}
+
+	/** 是否处于声波模式（仅阶段 1）。 */
+	public boolean isSonicMode() {
+		return this.sonicMode;
+	}
+
+	/** 最近一次听到声音的位置；从未听到时为 null。 */
+	public Vec3d getCuriousPos() {
+		return this.curiousPos;
 	}
 
 	/**
@@ -1398,7 +1295,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			}
 			// 此刻只是"派发"，accept 会按距离延迟；音效补充靠这个同 tick 标记配对
 			YaoYongshouEntity.this.undoSupplementIfAny(player, world.getTime());
-			YaoYongshouEntity.this.lastGameEventTicks.put(player.getUuid(), world.getTime());
+			YaoYongshouEntity.this.ledger.markEventHeard(player.getUuid(), world.getTime());
 			return true;
 		}
 
@@ -1479,7 +1376,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.updateBossFormRevert();
 		this.updateOutOfCombatRegen(now);
 		this.updateMovementSpeed();
-		this.updateSpeedTrailParticles();
+		EntityParticles.speedTrail(this);
 		this.updateCuriosityLook(now);
 	}
 
@@ -1608,7 +1505,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		// 被打时能贴脸还手；目标一退出去就立刻把控制权还给远程
 		this.goalSelector.add(2, new CloseMeleeGoal(this, 1.2, true));
 		// 远程：阶段 1 由原版 Goal 控制走位/口水；Boss 阶段的走位/攻击由 updateBossCombat 接管
-		this.goalSelector.add(3, new LockAwareProjectileAttackGoal(1.25D, SPIT_COOLDOWN_TICKS,
+		this.goalSelector.add(3, new LockAwareProjectileAttackGoal(this, 1.25D, SPIT_COOLDOWN_TICKS,
 				(float) CombatProfile.spitRange(1)));
 		this.goalSelector.add(6, new IdleWanderGoal(this, 1.0D));
 		this.goalSelector.add(7, new CalmLookAtEntityGoal(this));
@@ -1728,7 +1625,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			}
 			if (living instanceof PlayerEntity player) {
 				// 换了个玩家贴脸打：声波跟着换目标，不中断
-				this.angerByPlayer.put(player.getUuid(), ANGER_ANGRY);
+				this.ledger.setAnger(player.getUuid(), ANGER_ANGRY);
 				this.sonicTarget = player.getUuid();
 				this.sonicTicks = 0;
 				this.setTarget(living);
@@ -1781,7 +1678,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		// 开火前先把身体和头都转向玩家
 		this.faceTarget(target);
 
-		YaoYongshouSpitEntity spit = new YaoYongshouSpitEntity(EntityType.LLAMA_SPIT, world);
+		YaoYongshouSpitEntity spit = new YaoYongshouSpitEntity(ModEntities.YAO_SPIT, world);
 		spit.setOwner(this);
 		spit.setAttack(damage, piercing, knockback);
 		spit.setPosition(this.getX(), this.getEyeY() - 0.1, this.getZ());
@@ -1831,7 +1728,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		// 命中瞬间记录 age：客户端按渲染插值算进度，动画从这一 tick 平滑开始
 		this.dataTracker.set(ATTACK_START_AGE, this.age);
 		// 命中点的扬尘：dust_pillar 贴在目标脚下，比打在脸上更像"砸出来的"
-		this.spawnMeleeDustParticles(target);
+		EntityParticles.meleeDust(this, target);
 		if (hit && target instanceof LivingEntity livingTarget) {
 			// 命中后向上顶 0.4 × (1 - 击退抗性)，水平方向不额外加
 			double resistance = Math.max(0.0D,
@@ -1850,141 +1747,5 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			this.countRevengeShot();
 		}
 		return hit;
-	}
-
-	/** 好奇：冷静时只转头看声源；期间把玩家注视/随机张望让开。 */
-	private static class CuriousLookGoal extends Goal {
-		private final YaoYongshouEntity yao;
-
-		CuriousLookGoal(YaoYongshouEntity yao) {
-			this.yao = yao;
-			this.setControls(EnumSet.of(Goal.Control.LOOK));
-		}
-
-		@Override
-		public boolean canStart() {
-			return this.shouldLook();
-		}
-
-		@Override
-		public boolean shouldContinue() {
-			return this.shouldLook();
-		}
-
-		private boolean shouldLook() {
-			return !this.yao.bossForm && !this.yao.sonicMode && this.yao.getTarget() == null
-					&& this.yao.curiousPos != null
-					&& this.yao.isCurious(this.yao.getWorld().getTime());
-		}
-
-		@Override
-		public void tick() {
-			this.yao.getLookControl().lookAt(this.yao.curiousPos.x, this.yao.curiousPos.y,
-					this.yao.curiousPos.z);
-		}
-	}
-
-	private static class CalmLookAtEntityGoal extends LookAtEntityGoal {
-		private final YaoYongshouEntity yao;
-
-		CalmLookAtEntityGoal(YaoYongshouEntity yao) {
-			super(yao, PlayerEntity.class, 8.0F);
-			this.yao = yao;
-		}
-
-		@Override
-		public boolean canStart() {
-			return !this.yao.isCurious(this.yao.getWorld().getTime()) && super.canStart();
-		}
-
-		@Override
-		public boolean shouldContinue() {
-			return !this.yao.isCurious(this.yao.getWorld().getTime()) && super.shouldContinue();
-		}
-	}
-
-	private static class CalmLookAroundGoal extends LookAroundGoal {
-		private final YaoYongshouEntity yao;
-
-		CalmLookAroundGoal(YaoYongshouEntity yao) {
-			super(yao);
-			this.yao = yao;
-		}
-
-		@Override
-		public boolean canStart() {
-			return !this.yao.isCurious(this.yao.getWorld().getTime()) && super.canStart();
-		}
-
-		@Override
-		public boolean shouldContinue() {
-			return !this.yao.isCurious(this.yao.getWorld().getTime()) && super.shouldContinue();
-		}
-	}
-
-	/** 只在贴身距离才触发的近战：优先级 2，进出都由距离把关，不会压制远程吐口水。 */
-	private static class CloseMeleeGoal extends MeleeAttackGoal {
-		CloseMeleeGoal(PathAwareEntity mob, double speed, boolean pauseWhenMobIdle) {
-			super(mob, speed, pauseWhenMobIdle);
-		}
-
-		private boolean targetInMeleeRange() {
-			LivingEntity target = this.mob.getTarget();
-			// 所有阶段都是 5 格近战
-			return target != null && this.mob.squaredDistanceTo(target) <= ((YaoYongshouEntity) this.mob).meleeRangeSquared();
-		}
-
-		private boolean sonicCharging() {
-			return ((YaoYongshouEntity) this.mob).isSonicCharging();
-		}
-
-		@Override
-		public boolean canStart() {
-			// 声波蓄力中不抢控制权：先把这一发打完
-			return !this.sonicCharging() && this.targetInMeleeRange() && super.canStart();
-		}
-
-		@Override
-		public boolean shouldContinue() {
-			// 目标一退出 5 格马上撒手，把控制权还给远程
-			return !this.sonicCharging() && this.targetInMeleeRange() && super.shouldContinue();
-		}
-	}
-
-	/** Boss 阶段的走位/攻击由 updateBossCombat 统一接管，原版远程 AI 只负责盯着目标。 */
-	private final class LockAwareProjectileAttackGoal extends ProjectileAttackGoal {
-		LockAwareProjectileAttackGoal(double speed, int attackInterval, float range) {
-			super(YaoYongshouEntity.this, speed, attackInterval, range);
-		}
-
-		@Override
-		public void tick() {
-			// Boss 阶段的走位与攻击由实体自己接管，只留视线
-			if (!YaoYongshouEntity.this.bossForm) {
-				super.tick();
-				return;
-			}
-			LivingEntity target = YaoYongshouEntity.this.getTarget();
-			if (target != null) {
-				YaoYongshouEntity.this.getLookControl().lookAt(target, 30.0F, 30.0F);
-			}
-		}
-	}
-
-	/** 玩家在 16~20 格的"合适距离"内就站定只看人：把原版游走拦掉。 */
-	private static class IdleWanderGoal extends WanderAroundFarGoal {
-		IdleWanderGoal(PathAwareEntity mob, double speed) {
-			super(mob, speed);
-		}
-
-		@Override
-		public boolean canStart() {
-			return !((YaoYongshouEntity) this.mob).shouldStandStill() && super.canStart();
-		}
-
-		@Override
-		public boolean shouldContinue() {
-			return !((YaoYongshouEntity) this.mob).shouldStandStill() && super.shouldContinue();
-		}
 	}
 }

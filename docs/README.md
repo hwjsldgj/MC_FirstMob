@@ -7,6 +7,9 @@
 | [README](../README.md) | 模组简介、玩法速览、构建与安装 | 玩家 / 使用者 |
 | [SPEC](SPEC.md) | 行为规范：四阶段、索敌、攻击与穿甲、数值表、验收用例 | 策划 / 测试 / 开发者 |
 | [API](API.md) | 接口：注册 ID、Java 成员、Mixin、资源契约、稳定度 | 二次开发 / 维护者 |
+| [COUPLING](COUPLING.md) | 原版依赖盘点：逐项必要性判断、解除方案、仍需保留的理由 | 维护者 / 升级前评估 |
+| [ARCHITECTURE](ARCHITECTURE.md) | 架构与拆分：包职责、依赖方向、演进阶段与验收 | 开发者 / 迭代排期 |
+| [BREAKING](BREAKING.md) | 破坏性变更与兼容记录：影响面、迁移方式 | 所有使用者 |
 | [AGENTS](../AGENTS.md) | 工程约定：环境、结构、不变量、踩坑、验证、分支与合并、提交 | 协作者 / AI |
 | [CHANGELOG](../CHANGELOG.md) | 版本变更记录 | 所有人 |
 
@@ -16,6 +19,8 @@
 2. 想改行为/数值：读 [SPEC](SPEC.md) 的状态机与数值总表，再动代码。
 3. 想接 API/改资源：读 [API](API.md) 的稳定度分级与资源契约。
 4. 要提交代码：读 [AGENTS](../AGENTS.md) 的不变量、踩坑与「分支与合并」，跑完验收用例。
+5. 要评估依赖或升级：读 [COUPLING](COUPLING.md) 的盘点表与升级风险。
+6. 要改动结构：读 [ARCHITECTURE](ARCHITECTURE.md) 的包职责与阶段划分。
 
 ## 维护规则
 
