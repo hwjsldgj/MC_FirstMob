@@ -1,7 +1,5 @@
 package com.example.hush.entity;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 
@@ -13,6 +11,7 @@ import com.example.hush.entity.goal.CloseMeleeGoal;
 import com.example.hush.entity.goal.CuriousLookGoal;
 import com.example.hush.entity.goal.IdleWanderGoal;
 import com.example.hush.entity.goal.LockAwareProjectileAttackGoal;
+import com.example.hush.hearing.AngerLedger;
 import com.example.hush.registry.ModSounds;
 
 import net.minecraft.block.BlockState;
@@ -197,14 +196,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final TrackedData<Integer> ATTACK_START_AGE = DataTracker.registerData(YaoYongshouEntity.class,
 			TrackedDataHandlerRegistry.INTEGER);
 
-	/** 每个玩家当前的愤怒值（0~100）。 */
-	private final Map<UUID, Integer> angerByPlayer = new HashMap<>();
-	/** 每个玩家最近一次被 GameEvent 命中的 tick：音效只在没有事件配对时作为补充。 */
-	private final Map<UUID, Long> lastGameEventTicks = new HashMap<>();
-	/** 每个玩家最近一次"音效补充"计数的 tick：若 GameEvent 稍后才到，用来回滚这次补充。 */
-	private final Map<UUID, Long> lastSupplementTicks = new HashMap<>();
-	/** 愤怒衰减计时：每 20 tick 全体 -1（{@link #ANGER_DECAY_INTERVAL_TICKS}）。 */
-	private int angerDecayTimer;
+	/** 愤怒、听觉配对与限频的账本：纯逻辑，有单测（AngerLedgerTest）。 */
+	private final AngerLedger ledger = new AngerLedger();
 	/** 好奇：看向声源的位置与截止 tick。 */
 	private Vec3d curiousPos;
 	private long curiousUntil;
@@ -215,10 +208,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private final Vibrations.ListenerData vibrationListenerData = new Vibrations.ListenerData();
 	private final Vibrations.Callback vibrationCallback;
 	private final EntityGameEventHandler<Vibrations.VibrationListener> gameEventHandler;
-	/** 每个玩家上一次走路 / 跳跃 / 受击发声的 tick，用来在 5 秒窗口内各限一次。 */
-	private final Map<UUID, Long> lastWalkTicks = new HashMap<>();
-	private final Map<UUID, Long> lastJumpTicks = new HashMap<>();
-	private final Map<UUID, Long> lastHurtTicks = new HashMap<>();
 	/** 挨打反击模式：只打回去，计数用完就收手（不无限追）。 */
 	private boolean revengeMode;
 	/** 本轮反击还剩几次攻击。 */
@@ -399,9 +388,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.setBaseAttribute(EntityAttributes.GENERIC_ARMOR_TOUGHNESS, CombatProfile.ARMOR_TOUGHNESS);
 		this.removePhaseBuffs();
 		// Boss 期间强制的满愤怒不带到普通形态，避免一退回就接着放声波
-		this.angerByPlayer.clear();
-		this.lastGameEventTicks.clear();
-		this.lastSupplementTicks.clear();
+		this.ledger.clearHearing();
 		this.bossBar.setVisible(false);
 		debug("BOSS form exit hp={} armor={}", this.getHealth(),
 				this.getAttributeValue(EntityAttributes.GENERIC_ARMOR));
@@ -1182,18 +1169,12 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 
 	/** 该玩家最近是否被本实体的振动监听器接收过 GameEvent。 */
 	private boolean wasGameEventHeardRecently(PlayerEntity player) {
-		Long last = this.lastGameEventTicks.get(player.getUuid());
-		return last != null && this.getWorld().getTime() - last.longValue() <= SUPPLEMENT_PAIR_TICKS;
+		return this.ledger.wasEventHeardRecently(player.getUuid(), this.getWorld().getTime(), SUPPLEMENT_PAIR_TICKS);
 	}
 
 	/** 音效先到、GameEvent 后到：把刚才那次音效补充的愤怒撤回，避免一次动作算两次。 */
 	private void undoSupplementIfAny(PlayerEntity player, long now) {
-		Long last = this.lastSupplementTicks.remove(player.getUuid());
-		if (last == null || now - last.longValue() > SUPPLEMENT_PAIR_TICKS) {
-			return;
-		}
-		this.angerByPlayer.computeIfPresent(player.getUuid(),
-				(uuid, anger) -> Math.max(0, anger - ANGER_PER_LOUD_NOISE));
+		this.ledger.rollbackSupplement(player.getUuid(), now, SUPPLEMENT_PAIR_TICKS, ANGER_PER_LOUD_NOISE);
 	}
 
 	/** 振动通道：按事件类型分大/小噪音，并记录声源位置供好奇使用。 */
@@ -1203,13 +1184,11 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 		long now = this.getWorld().getTime();
 		if (kind != NOISE_LOUD) {
-			Map<UUID, Long> lastTicks = kind == NOISE_WALK ? this.lastWalkTicks
-					: (kind == NOISE_JUMP ? this.lastJumpTicks : this.lastHurtTicks);
-			Long last = lastTicks.get(player.getUuid());
-			if (last != null && now - last.longValue() < MINOR_NOISE_COOLDOWN_TICKS) {
+			AngerLedger.Noise noise = kind == NOISE_WALK ? AngerLedger.Noise.WALK
+					: (kind == NOISE_JUMP ? AngerLedger.Noise.JUMP : AngerLedger.Noise.HURT);
+			if (!this.ledger.allowMinorNoise(noise, player.getUuid(), now, MINOR_NOISE_COOLDOWN_TICKS)) {
 				return;
 			}
-			lastTicks.put(player.getUuid(), now);
 		}
 		this.addAnger(player, kind == NOISE_LOUD ? ANGER_PER_LOUD_NOISE : ANGER_PER_MINOR_NOISE);
 		this.triggerCuriosity(pos, now);
@@ -1222,7 +1201,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			return;
 		}
 		long now = this.getWorld().getTime();
-		this.lastSupplementTicks.put(player.getUuid(), now);
+		this.ledger.markSupplement(player.getUuid(), now);
 		this.addAnger(player, ANGER_PER_LOUD_NOISE);
 		this.triggerCuriosity(Vec3d.ofCenter(player.getBlockPos()), now);
 		this.updateAngerBehavior(now);
@@ -1242,12 +1221,11 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	private void addAnger(PlayerEntity player, int amount) {
-		int anger = Math.min(ANGER_MAX, this.getAnger(player) + amount);
-		this.angerByPlayer.put(player.getUuid(), anger);
+		this.ledger.addAnger(player.getUuid(), amount);
 	}
 
 	private int getAnger(PlayerEntity player) {
-		return this.angerByPlayer.getOrDefault(player.getUuid(), 0);
+		return this.ledger.anger(player.getUuid());
 	}
 
 	/** 当前愤怒最高的存活玩家；同分取最近。 */
@@ -1255,15 +1233,12 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		PlayerEntity best = null;
 		int bestAnger = 0;
 		double bestDistance = Double.MAX_VALUE;
-		for (Map.Entry<UUID, Integer> entry : this.angerByPlayer.entrySet()) {
-			int anger = entry.getValue();
-			if (anger <= 0) {
-				continue;
-			}
-			PlayerEntity player = this.getWorld().getPlayerByUuid(entry.getKey());
+		for (UUID uuid : this.ledger.angeredPlayers()) {
+			PlayerEntity player = this.getWorld().getPlayerByUuid(uuid);
 			if (player == null || !player.isAlive() || player.isSpectator()) {
 				continue;
 			}
+			int anger = this.ledger.anger(uuid);
 			double distance = this.squaredDistanceTo(player);
 			if (anger > bestAnger || (anger == bestAnger && distance < bestDistance)) {
 				best = player;
@@ -1274,18 +1249,9 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		return best;
 	}
 
-	/** 每 20 tick 全体愤怒 -1，归零的条目移除。 */
+	/** 每 20 tick 全体愤怒 -1，归零的条目移除，并清理过期的听觉记忆。 */
 	private void decayAnger(long now) {
-		if (++this.angerDecayTimer < ANGER_DECAY_INTERVAL_TICKS) {
-			return;
-		}
-		this.angerDecayTimer = 0;
-		this.angerByPlayer.entrySet().removeIf(entry -> entry.getValue() <= 1);
-		this.angerByPlayer.replaceAll((uuid, anger) -> anger - 1);
-		this.lastGameEventTicks.entrySet()
-				.removeIf(entry -> now - entry.getValue().longValue() > MINOR_NOISE_COOLDOWN_TICKS);
-		this.lastSupplementTicks.entrySet()
-				.removeIf(entry -> now - entry.getValue().longValue() > MINOR_NOISE_COOLDOWN_TICKS);
+		this.ledger.decayIfDue(now, ANGER_DECAY_INTERVAL_TICKS, MINOR_NOISE_COOLDOWN_TICKS);
 	}
 
 	/** 阶段 1 按最高愤怒决定：警觉吐口水、激怒放声波、冷静收手；Boss 阶段由 {@link #updateBossCombat} 接管。 */
@@ -1415,7 +1381,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			}
 			// 此刻只是"派发"，accept 会按距离延迟；音效补充靠这个同 tick 标记配对
 			YaoYongshouEntity.this.undoSupplementIfAny(player, world.getTime());
-			YaoYongshouEntity.this.lastGameEventTicks.put(player.getUuid(), world.getTime());
+			YaoYongshouEntity.this.ledger.markEventHeard(player.getUuid(), world.getTime());
 			return true;
 		}
 
@@ -1745,7 +1711,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			}
 			if (living instanceof PlayerEntity player) {
 				// 换了个玩家贴脸打：声波跟着换目标，不中断
-				this.angerByPlayer.put(player.getUuid(), ANGER_ANGRY);
+				this.ledger.setAnger(player.getUuid(), ANGER_ANGRY);
 				this.sonicTarget = player.getUuid();
 				this.sonicTicks = 0;
 				this.setTarget(living);
