@@ -33,6 +33,7 @@
 - CI 把三个 Loom 端点覆盖参数抽成 workflow 级 `LOOM_ARGS`，`build` 与 `smoke` 共用；`hush-jar` artifact 排除 `-sources.jar`
 - 拆分第二步：声波节拍抽成 `combat/SonicCycle`（蓄力 34 tick / 间隔 160 tick，Boss 与阶段 1 各一个实例），传送落点搜索抽成 `entity/TeleportSearch`；实体减约 50 行，行为不变；新增 `SonicCycleTest`（5 例），单测总数 31
 - 拆分第三步：BOSS 阶段的「距离 → 攻击档」抽成 `combat/AttackBand`（`MELEE` / `SPIT` / `RANDOM` / `SONIC` / `CHASE_ONLY`），实体只负责执行；`CombatProfile` 补 `MELEE_RANGE = 5`，删掉四个只给这条分支用的距离换算方法；实体再减约 30 行；新增 `AttackBandTest`（5 例），单测总数 36
+- 拆分第四步：Boss 血条抽成 `visual/BossBarView`（追踪/隐藏/清空、10 tick 节流、阶段 4 紫色「（狂暴）」），实体只传「是否显示 / 血量比例 / 阶段」；实体再减约 25 行，行为不变；单测仍 36 条（纯表现类，无新增可测逻辑）
 
 ### 文档
 

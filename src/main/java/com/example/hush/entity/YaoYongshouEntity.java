@@ -17,6 +17,7 @@ import com.example.hush.entity.goal.LockAwareProjectileAttackGoal;
 import com.example.hush.hearing.AngerLedger;
 import com.example.hush.registry.ModEntities;
 import com.example.hush.registry.ModSounds;
+import com.example.hush.visual.BossBarView;
 import com.example.hush.visual.EntityParticles;
 
 import net.minecraft.entity.Entity;
@@ -26,8 +27,6 @@ import net.minecraft.entity.ai.goal.SwimGoal;
 import net.minecraft.entity.attribute.EntityAttribute;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.entity.boss.BossBar;
-import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.damage.DamageType;
 import net.minecraft.entity.data.DataTracker;
@@ -52,7 +51,6 @@ import net.minecraft.registry.tag.TagKey;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundEvent;
-import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
@@ -135,8 +133,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** 原版监守者开炮前蓄力 34 tick、两发间隔 160 tick，见 {@link SonicCycle}。 */
 	/** Boss 掉落经验：普通生物 1~3 点，boss 一次给 500 点。 */
 	private static final int BOSS_XP_REWARD = 500;
-	/** Boss 血条同步间隔：每 tick 都刷新会不停发包，10 tick（0.5 秒）足够跟手。 */
-	private static final int BOSS_BAR_INTERVAL_TICKS = 10;
 	/** 脱战回血：玩家连续 10 秒（200 tick）没造成伤害，且未满血时挂生命恢复 I。 */
 	private static final int OUT_OF_COMBAT_REGEN_TICKS = 200;
 	private static final int OUT_OF_COMBAT_REGEN_AMPLIFIER = 0;
@@ -221,8 +217,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** 下一次允许尝试传送的世界时间。 */
 	private long nextTeleportTick;
 	/** Boss 血条：标题取实体显示名，进度跟随当前血量，只发给正在追踪本实体的玩家。 */
-	private final ServerBossBar bossBar = new ServerBossBar(this.getDisplayName(), BossBar.Color.RED,
-			BossBar.Style.PROGRESS);
+	private final BossBarView bossBar = new BossBarView(this.getDisplayName());
 
 	public YaoYongshouEntity(EntityType<? extends LlamaEntity> entityType, World world) {
 		super(entityType, world);
@@ -362,7 +357,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.removePhaseBuffs();
 		// Boss 期间强制的满愤怒不带到普通形态，避免一退回就接着放声波
 		this.ledger.clearHearing();
-		this.bossBar.setVisible(false);
+		this.bossBar.hide();
 		debug("BOSS form exit hp={} armor={}", this.getHealth(),
 				this.getAttributeValue(EntityAttributes.GENERIC_ARMOR));
 	}
@@ -915,38 +910,21 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	@Override
 	public void onStartedTrackingBy(ServerPlayerEntity player) {
 		super.onStartedTrackingBy(player);
-		this.bossBar.addPlayer(player);
+		this.bossBar.track(player);
 	}
 
 	@Override
 	public void onStoppedTrackingBy(ServerPlayerEntity player) {
 		super.onStoppedTrackingBy(player);
-		this.bossBar.removePlayer(player);
+		this.bossBar.untrack(player);
 	}
 
 	/** 血条跟随血量，但只有 Boss 形态才显示；按间隔刷新，值没变就不发包。 */
 	private void updateBossBar() {
 		boolean visible = this.bossForm && this.isAlive() && !this.isRemoved();
-		if (this.bossBar.isVisible() != visible) {
-			this.bossBar.setVisible(visible);
-		}
-		if (visible && this.age % BOSS_BAR_INTERVAL_TICKS == 0) {
-			float percent = this.getHealth() / this.getMaxHealth();
-			if (percent != this.bossBar.getPercent()) {
-				this.bossBar.setPercent(percent);
-			}
-			// 阶段 4 只改血条表现：紫色 +「（狂暴）」，不改攻速与伤害
-			boolean berserk = this.phase >= 4;
-			Text name = berserk ? Text.literal(this.getDisplayName().getString() + "（狂暴）")
-					: this.getDisplayName();
-			if (!this.bossBar.getName().equals(name)) {
-				this.bossBar.setName(name);
-			}
-			BossBar.Color color = berserk ? BossBar.Color.PURPLE : BossBar.Color.RED;
-			if (this.bossBar.getColor() != color) {
-				this.bossBar.setColor(color);
-			}
-		}
+		// 阶段 4 只改血条表现：紫色 +「（狂暴）」，不改攻速与伤害
+		this.bossBar.update(visible, this.age, this.getHealth() / this.getMaxHealth(), this.phase >= 4,
+				this.getDisplayName());
 	}
 
 	@Override
@@ -954,8 +932,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		super.onDeath(source);
 		// 死亡动画期间就收起血条，别在屏幕上留一条空血条
 		if (!this.getWorld().isClient()) {
-			this.bossBar.setVisible(false);
-			this.bossBar.clearPlayers();
+		this.bossBar.clear();
 		}
 	}
 

@@ -28,7 +28,8 @@ com.example.hush
 │   ├── TeleportSearch       传送落点搜索（3×3×4 空地判定）
 │   └── goal/                6 个 AI 目标，各自一个文件
 ├── visual/
-│   └── EntityParticles      粒子表现（只依赖 ServerWorld 与实体）
+│   ├── EntityParticles      粒子表现（只依赖 ServerWorld 与实体）
+│   └── BossBarView          Boss 血条（追踪玩家、节流、阶段 4 样式）
 ├── mixin/                   PlayerSoundMixin、LivingEntityArmorMixin
 └── registry/                ModEntities / ModItems / ModSounds
 ```
@@ -42,6 +43,7 @@ com.example.hush
 | 声波节拍 | `SonicCycle` | 实体持有两个实例（Boss 阶段 / 阶段 1 各一个）；蓄力与开炮音效仍由实体触发，节拍本身有单测 |
 | 好奇视线 | 实体 | `curiousPos` / `curiousUntil`，读档重置（见 SPEC 已知限制） |
 | 粒子表现 | `EntityParticles` | 只读实体状态，不回写 |
+| Boss 血条 | `BossBarView` | 只发给正在追踪的玩家；10 tick 节流；阶段 4 紫色「（狂暴）」 |
 | 挥击动画 | 实体 `ATTACK_START_AGE` | 唯一的 `TrackedData`，客户端按 `age` 插值 |
 
 ## 4. 本次拆分状态
@@ -51,9 +53,10 @@ com.example.hush
 | 一 | AI Goal 拆到 `entity/goal`，账本、粒子各自成类 | 已完成 | `build` 通过；21 项单测（9 + 12）；实体 1990 → 约 1600 行 |
 | 二 | 声波节拍抽成 `combat/SonicCycle`，传送落点搜索抽成 `entity/TeleportSearch` | 已完成 | `build` 通过；31 项单测（9 + 12 + 5 + 5）；实体再减约 50 行 |
 | 三 | 距离 → 攻击档抽成 `combat/AttackBand`，实体只负责执行 | 已完成 | `build` 通过；36 项单测；实体再减约 30 行 |
-| 四 | 换基类（`LlamaEntity` → `PathAwareEntity`） | 未开始 | 需要游戏内存档兼容验证，不在地面改 |
-| 五 | 口水去掉 `LlamaSpitEntity` 继承，抄写原版弹道与渲染 | 未开始 | 需要游戏内验证弹道与命中，先注册自有类型（已完成） |
-| 六 | 剩余硬编码数值并入 `CombatProfile` | 未开始 | 数值表与 SPEC 同步 |
+| 四 | Boss 血条抽成 `visual/BossBarView`（追踪/隐藏/刷新归它管） | 已完成 | `build` 通过；36 项单测；实体再减约 25 行 |
+| 五 | 换基类（`LlamaEntity` → `PathAwareEntity`） | 未开始 | 需要游戏内存档兼容验证，不在地面改 |
+| 六 | 口水去掉 `LlamaSpitEntity` 继承，抄写原版弹道与渲染 | 未开始 | 需要游戏内验证弹道与命中，先注册自有类型（已完成） |
+| 七 | 剩余硬编码数值并入 `CombatProfile` | 未开始 | 数值表与 SPEC 同步 |
 
 ## 5. 不做的事
 
