@@ -773,7 +773,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		if (this.bossForm) {
 			return false;
 		}
-		// 非 Boss 形态：只要被注视就不移动，战斗中也不追击
+		// 非 Boss 形态：被注视时不移动（战斗中同样生效），其余行为不变
 		if (this.isWatchedByPlayer()) {
 			return true;
 		}
@@ -1406,7 +1406,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.updateOutOfCombatRegen(now);
 		this.updateMovementSpeed();
 		EntityParticles.speedTrail(this);
-		// 非 Boss 形态被注视：取消本 tick 的寻路，原地不动（攻击照常，只是不追）
+		// 非 Boss 形态被注视：取消本 tick 的寻路，原地不动（攻击照常，追击逻辑不改）
 		if (!this.bossForm && this.isWatchedByPlayer()) {
 			this.getNavigation().stop();
 		}
