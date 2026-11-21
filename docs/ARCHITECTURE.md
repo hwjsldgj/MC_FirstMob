@@ -16,13 +16,15 @@ com.example.hush
 ├── Hush                     入口：注册三件套 + 创造栏
 ├── combat/                  纯数值与纯几何
 │   ├── CombatProfile        阶段表（伤害/护甲/距离）
-│   └── GazeWatch            「玩家是否注视目标」的角度/距离判定
+│   ├── GazeWatch            「玩家是否注视目标」的角度/距离判定
+│   └── SonicCycle           声波蓄力/间隔节拍（Boss 与阶段 1 各一个实例）
 ├── hearing/                 听觉与愤怒
 │   └── AngerLedger          每个玩家的愤怒、配对窗口、限频、衰减（无 Minecraft 类型）
 ├── entity/
 │   ├── YaoYongshouEntity    编排：状态、AI 装配、战斗流程
 │   ├── YaoYongshouSpitEntity 口水（自有实体类型 hush:yao_spit）
 │   ├── YaoArmorPiercingDamageSource 部分穿甲的伤害源
+│   ├── TeleportSearch       传送落点搜索（3×3×4 空地判定）
 │   └── goal/                6 个 AI 目标，各自一个文件
 ├── visual/
 │   └── EntityParticles      粒子表现（只依赖 ServerWorld 与实体）
@@ -36,7 +38,7 @@ com.example.hush
 | --- | --- | --- |
 | `bossForm` / `bossFormDormant` / `phase` | 实体 | 形态与阶段，服务端计算；NBT 只存前两个，阶段读档重算 |
 | 愤怒、音效配对、限频 | `AngerLedger` | 有单测；离线玩家条目定期清理 |
-| 声波节拍 | 实体 | `sonicTicks` 与 `lockSonicTicks` 两套节拍仍留在实体，待后续抽成 `SonicCycle`（有 `playSound` 副作用，需先做验收） |
+| 声波节拍 | `SonicCycle` | 实体持有两个实例（Boss 阶段 / 阶段 1 各一个）；蓄力与开炮音效仍由实体触发，节拍本身有单测 |
 | 好奇视线 | 实体 | `curiousPos` / `curiousUntil`，读档重置（见 SPEC 已知限制） |
 | 粒子表现 | `EntityParticles` | 只读实体状态，不回写 |
 | 挥击动画 | 实体 `ATTACK_START_AGE` | 唯一的 `TrackedData`，客户端按 `age` 插值 |
@@ -46,9 +48,10 @@ com.example.hush
 | 阶段 | 内容 | 状态 | 验收 |
 | --- | --- | --- | --- |
 | 一 | AI Goal 拆到 `entity/goal`，账本、粒子各自成类 | 已完成 | `build` 通过；21 项单测（9 + 12）；实体 1990 → 约 1600 行 |
-| 二 | 换基类（`LlamaEntity` → `PathAwareEntity`） | 未开始 | 需要游戏内存档兼容验证，不在地面改 |
-| 三 | 口水去掉 `LlamaSpitEntity` 继承，抄写原版弹道与渲染 | 未开始 | 需要游戏内验证弹道与命中，先注册自有类型（已完成） |
-| 四 | 剩余硬编码数值并入 `CombatProfile` | 未开始 | 数值表与 SPEC 同步 |
+| 二 | 声波节拍抽成 `combat/SonicCycle`，传送落点搜索抽成 `entity/TeleportSearch` | 已完成 | `build` 通过；31 项单测（9 + 12 + 5 + 5）；实体再减约 50 行 |
+| 三 | 换基类（`LlamaEntity` → `PathAwareEntity`） | 未开始 | 需要游戏内存档兼容验证，不在地面改 |
+| 四 | 口水去掉 `LlamaSpitEntity` 继承，抄写原版弹道与渲染 | 未开始 | 需要游戏内验证弹道与命中，先注册自有类型（已完成） |
+| 五 | 剩余硬编码数值并入 `CombatProfile` | 未开始 | 数值表与 SPEC 同步 |
 
 ## 5. 不做的事
 

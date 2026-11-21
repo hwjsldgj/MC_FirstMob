@@ -144,6 +144,8 @@ public class Hush implements ModInitializer {
 | `ModSounds` | 6 个 `SoundEvent`、`register()` | 音效事件 |
 | `CombatProfile` | 阶段阈值、护甲、伤害/穿甲/击退、距离分段的常量与查表方法 | 纯 Java、不依赖 Minecraft；战斗数值的单一来源，由 `CombatProfileTest` 覆盖 |
 | `GazeWatch` | `isWatching(dx, dy, dz, lx, ly, lz, distance)`、`MAX_ANGLE_DEGREES = 60`、`MAX_RANGE = 32` | 纯几何的「玩家是否注视目标」判定，不依赖 Minecraft；由 `GazeWatchTest` 覆盖 |
+| `SonicCycle` | `CHARGE_TICKS = 34`、`INTERVAL_TICKS = 160`、`tick()`（返回本 tick 是否开炮）、`isIdle()`、`isCharging()`、`reset()` | 声波蓄力/间隔节拍；实体持有两个实例（Boss 阶段 / 阶段 1）；由 `SonicCycleTest` 覆盖 |
+| `TeleportSearch` | `findLandingSpot(ServerWorld, x, baseY, z)`、`isSpaceClear(ServerWorld, BlockPos)` | 传送落点搜索（3×3×4 空地判定）；只读方块，不改变实体状态 |
 
 ### 3.6 客户端
 
