@@ -5,6 +5,7 @@ import java.util.function.BiConsumer;
 
 import com.example.hush.Hush;
 import com.example.hush.combat.CombatProfile;
+import com.example.hush.combat.GazeWatch;
 import com.example.hush.entity.goal.CalmLookAroundGoal;
 import com.example.hush.entity.goal.CalmLookAtEntityGoal;
 import com.example.hush.entity.goal.CloseMeleeGoal;
@@ -772,12 +773,39 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		if (this.bossForm || this.getTarget() != null) {
 			return false;
 		}
+		// 仅非战斗（无目标）时生效：被注视就不游走
+		if (this.isWatchedByPlayer()) {
+			return true;
+		}
 		PlayerEntity player = this.nearestPlayer();
 		if (player == null) {
 			return false;
 		}
 		double distanceSquared = this.squaredDistanceTo(player);
 		return distanceSquared >= IDLE_KEEP_SQUARED && distanceSquared <= IDLE_APPROACH_SQUARED;
+	}
+
+	/**
+	 * 非 Boss 形态下是否有玩家正在注视自己（{@link GazeWatch} 的角度/距离规则）。
+	 * <p>只看主世界服务端玩家；旁观者、死亡玩家不参与判定。
+	 */
+	public boolean isWatchedByPlayer() {
+		if (this.bossForm || !(this.getWorld() instanceof ServerWorld world)) {
+			return false;
+		}
+		Vec3d eye = this.getEyePos();
+		for (PlayerEntity player : world.getPlayers()) {
+			if (!player.isAlive() || player.isSpectator()) {
+				continue;
+			}
+			Vec3d look = player.getRotationVec(1.0F);
+			Vec3d from = player.getEyePos();
+			if (GazeWatch.isWatching(eye.x - from.x, eye.y - from.y, eye.z - from.z,
+					look.x, look.y, look.z, Math.sqrt(player.squaredDistanceTo(this)))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** 沿"玩家 → 自己"的方向退到 16 格以外。 */
@@ -1375,6 +1403,10 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.updateOutOfCombatRegen(now);
 		this.updateMovementSpeed();
 		EntityParticles.speedTrail(this);
+		// 非 Boss 且不在战斗中（无目标）被注视：取消寻路，原地不动；战斗时不生效
+		if (!this.bossForm && this.getTarget() == null && this.isWatchedByPlayer()) {
+			this.getNavigation().stop();
+		}
 		this.updateCuriosityLook(now);
 	}
 

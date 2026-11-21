@@ -2,6 +2,10 @@
 
 ## 未发布
 
+### 调整
+
+- 非 Boss 形态且未进入战斗时，被玩家注视（32 格内、视线夹角 ≤60°）会停止移动；战斗中不生效，攻击与注视机制不变
+
 ### 工程
 
 - 构建不再写死 JDK 路径：`gradle.properties` 移除 `org.gradle.java.home`，本地与 CI 统一用 `JAVA_HOME` 选择 JDK 21
