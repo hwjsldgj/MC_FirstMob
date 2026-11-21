@@ -27,7 +27,7 @@ Minecraft **1.21.1 Fabric** 模组「肃静」（`hush`），新增生物「姚�
 $env:JAVA_HOME='D:\pcl\jdk-21'
 $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 .\gradlew.bat build     # 产物 build/libs/hush-0.1.0-SNAPSHOT.jar
-.\gradlew.bat test      # 纯逻辑单测（CombatProfileTest），不需要进入游戏
+.\gradlew.bat test      # 纯逻辑单测 26 条（CombatProfileTest / AngerLedgerTest / GazeWatchTest），不需要进入游戏
 .\gradlew.bat runClient # 开发客户端，日志 run/logs/latest.log
 ```
 
@@ -57,10 +57,12 @@ src/main/java/com/example/hush
 │   ├── ModItems.java               # 刷怪蛋
 │   └── ModSounds.java              # 自定义音效事件（转发原版声音，换字幕）
 └── combat
-    └── CombatProfile.java          # 四阶段纯数值表（阈值/护甲/伤害/距离），有单测
+    ├── CombatProfile.java          # 四阶段纯数值表（阈值/护甲/伤害/距离），有单测
+    └── GazeWatch.java              # 「玩家是否注视目标」的角度/距离判定，有单测
 src/test/java/com/example/hush
 ├── combat
-│   └── CombatProfileTest.java      # 阶段表与距离档的 JUnit 用例
+│   ├── CombatProfileTest.java      # 阶段表与距离档的 JUnit 用例
+│   └── GazeWatchTest.java          # 注视判定的角度/距离边界用例
 └── hearing
     └── AngerLedgerTest.java        # 愤怒、配对窗口、限频、衰减的 JUnit 用例
 src/client/java/com/example/hush/client
@@ -186,7 +188,7 @@ git switch main; git pull
 ```
 
 - CI 工作流：`.github/workflows/build.yml`，PR 与 `main` push 都触发，JDK 21，两个 job：
-  - `build`（必需检查）：JSON/语言键校验 → `./gradlew build`（含单测）→ 上传 `build/libs/*.jar`；失败时上传测试报告。
+  - `build`（必需检查）：JSON/语言键校验 → `./gradlew build`（含单测）→ 上传 `build/libs/hush-*.jar`（排除 `-sources.jar`）；失败时上传测试报告。
   - `smoke`：无头 `runServer`，用 `ci/smoke-datapack` 在启动后 summon 实体并打印 `HUSH_SMOKE_*` 标记，断言 Mixin 与实体注册未在加载时报错；标记出现后由 `ci/rcon_stop.py` 经 RCON（25575）优雅停服，超时只是兜底；日志作为 artifact 上传；只改 `docs/**` 或 `*.md` 的 PR 自动跳过该 job。
 - 本地复现冒烟：`mkdir run/smoke/datapacks` → 复制 `ci/smoke-datapack` 进去 → `run/eula.txt` 写 `eula=true` → `server.properties` 设 `level-name=smoke`、`enable-rcon=true`、`rcon.port=25575`、`rcon.password=hush-smoke` → `\gradlew.bat runServer`；看到 `run/logs/latest.log` 的 `HUSH_SMOKE_DONE` 后，在另一个窗口执行 `python ci\rcon_stop.py 127.0.0.1 25575 hush-smoke stop` 停服。
 - 规则集已把 `build` 设为必需状态检查（`strict=false`）：PR 的 `build` 没通过就不能合；改工作流时不能改 job 名，否则规则集的 context 对不上，合并会一直卡在 Expected。
