@@ -14,8 +14,9 @@
 ```
 com.example.hush
 ├── Hush                     入口：注册三件套 + 创造栏
-├── combat/                  纯数值
-│   └── CombatProfile        阶段表（伤害/护甲/距离）
+├── combat/                  纯数值与纯几何
+│   ├── CombatProfile        阶段表（伤害/护甲/距离）
+│   └── GazeWatch            「玩家是否注视目标」的角度/距离判定
 ├── hearing/                 听觉与愤怒
 │   └── AngerLedger          每个玩家的愤怒、配对窗口、限频、衰减（无 Minecraft 类型）
 ├── entity/

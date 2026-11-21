@@ -102,6 +102,8 @@ public class Hush implements ModInitializer {
 | `updateMovementSpeed()` | 空闲 III；阶段 1 追逐 I；阶段 2+ 追逐 II；阶段 4 >64 格追逐 III |
 | `updateBossFormRevert()` | 连续 600 tick 无目标退回普通形态 |
 | `updatePhase4Trigger(float)` | 从 >30% 跌破 ≤30% 时触发 3 分钟增益，冷却 1200 tick |
+| `isWatchedByPlayer()` | 非 Boss 形态下，32 格内有存活、非旁观玩家的视线夹角 ≤60° 时为 `true`；不依赖 Minecraft 几何的部分由 `GazeWatch` 计算 |
+| `shouldStandStill()` | 非 Boss、**无目标**且被注视时为 `true`（战斗中不生效）；否则仅在无目标且与玩家距离 16~32 格时为 `true` |
 | `meleeDamage()` / `meleePiercing()` / `spitDamage()` / `spitPiercing()` / `spitKnockback()` / `sonicDamage()` | 阶段数值档案：委托 `com.example.hush.combat.CombatProfile`（纯数值表，不依赖 Minecraft 类，由 `CombatProfileTest` 覆盖） |
 | `spitRangeSquared()` / `sonicMinRangeSquared()` / `sonicAttackMaxRangeSquared()` / `chaseStopRangeSquared()` | 阶段距离档案 |
 | 阶段目标解析 | `resolveBossTarget()` |
@@ -141,6 +143,7 @@ public class Hush implements ModInitializer {
 | `ModItems` | `YAO_YONGSHOU_SPAWN_EGG`、`register()` | 刷怪蛋 |
 | `ModSounds` | 6 个 `SoundEvent`、`register()` | 音效事件 |
 | `CombatProfile` | 阶段阈值、护甲、伤害/穿甲/击退、距离分段的常量与查表方法 | 纯 Java、不依赖 Minecraft；战斗数值的单一来源，由 `CombatProfileTest` 覆盖 |
+| `GazeWatch` | `isWatching(dx, dy, dz, lx, ly, lz, distance)`、`MAX_ANGLE_DEGREES = 60`、`MAX_RANGE = 32` | 纯几何的「玩家是否注视目标」判定，不依赖 Minecraft；由 `GazeWatchTest` 覆盖 |
 
 ### 3.6 客户端
 
