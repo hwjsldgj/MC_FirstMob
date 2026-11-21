@@ -134,6 +134,8 @@ jobs:
         run: |
           mkdir -p run/smoke/datapacks
           cp -r ci/smoke-datapack run/smoke/datapacks/hush-smoke
+          # 假玩家由 Carpet 提供：只进测试环境，不参与模组依赖
+          python3 ci/fetch_carpet.py
           printf 'eula=true\n' > run/eula.txt
           printf 'level-name=smoke\nonline-mode=false\nmax-tick-time=-1\nspawn-protection=0\nenable-rcon=true\nrcon.port=25575\nrcon.password=hush-smoke\nbroadcast-rcon-to-ops=false\n' > run/server.properties
 
@@ -141,24 +143,35 @@ jobs:
       # 不必等超时，整步从 ~3 分钟降到 ~1 分钟。超时只是兜底。
       - name: Run dedicated server
         if: steps.decide.outputs.run == 'true'
+        env:
+          # 假玩家场景需要 [Hush] 调试行；build.gradle 把它传给游戏 JVM
+          HUSH_DEBUG: '1'
         run: |
           set -uo pipefail
           LOG=run/logs/latest.log
-          rm -f "$LOG"
+          rm -f "$LOG" build/smoke-report.txt
+          # 数据包先证明「加载期没问题」，再由假玩家场景驱动战斗并用 RCON 停服。
+          # 驱动脚本自己会写 build/smoke-report.txt 并发送 stop。
           (
-            for _ in $(seq 1 120); do
+            for _ in $(seq 1 150); do
               if grep -q 'HUSH_SMOKE_DONE' "$LOG" 2>/dev/null; then
-                python3 ci/rcon_stop.py 127.0.0.1 25575 hush-smoke stop && break
+                cd ci && python3 fake_player_smoke.py \
+                  --log "$GITHUB_WORKSPACE/$LOG" \
+                  --report "$GITHUB_WORKSPACE/build/smoke-report.txt"
+                exit $?
               fi
               sleep 1
             done
+            echo '::warning::HUSH_SMOKE_DONE never appeared, stopping server'
+            python3 ci/rcon_stop.py 127.0.0.1 25575 hush-smoke stop || true
+            exit 1
           ) &
           WATCHER=$!
           set +e
-          timeout 150 ./gradlew runServer --console=plain --stacktrace $LOOM_ARGS
+          timeout 300 ./gradlew runServer --console=plain --stacktrace $LOOM_ARGS
           STATUS=$?
           set -e
-          wait "$WATCHER" 2>/dev/null || true
+          wait "$WATCHER" || true
           echo "server_exit=$STATUS"
           exit "$STATUS"
 
@@ -179,10 +192,24 @@ jobs:
           ! grep -q 'Unknown or invalid command' "$LOG" || fail "datapack command invalid"
           ! grep -q 'Failed to load datapack' "$LOG" || fail "datapack failed to load"
 
+      - name: Assert fake player scenario
+        if: steps.decide.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          REPORT=build/smoke-report.txt
+          fail() { echo "::error::$1"; tail -n 40 "$REPORT" || true; exit 1; }
+          test -f "$REPORT" || fail "fake player report missing"
+          ! grep -q '^- FAIL' "$REPORT" || fail "fake player assertions failed"
+          pass=$(grep -c '^- PASS' "$REPORT" || true)
+          test "$pass" -ge 10 || fail "only $pass assertions passed"
+          echo "fake player assertions passed: $pass"
+
       - name: Upload server log
         if: always() && steps.decide.outputs.run == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-log
-          path: run/logs/latest.log
+          path: |
+            run/logs/latest.log
+            build/smoke-report.txt
           if-no-files-found: warn

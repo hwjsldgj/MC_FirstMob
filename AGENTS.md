@@ -189,8 +189,8 @@ git switch main; git pull
 
 - CI 工作流：`.github/workflows/build.yml`，PR 与 `main` push 都触发，JDK 21，两个 job：
   - `build`（必需检查）：JSON/语言键校验 → `./gradlew build`（含单测）→ 上传 `build/libs/hush-*.jar`（排除 `-sources.jar`）；失败时上传测试报告。
-  - `smoke`：无头 `runServer`，用 `ci/smoke-datapack` 在启动后 summon 实体并打印 `HUSH_SMOKE_*` 标记，断言 Mixin 与实体注册未在加载时报错；标记出现后由 `ci/rcon_stop.py` 经 RCON（25575）优雅停服，超时只是兜底；日志作为 artifact 上传；只改 `docs/**` 或 `*.md` 的 PR 自动跳过该 job。
-- 本地复现冒烟：`mkdir run/smoke/datapacks` → 复制 `ci/smoke-datapack` 进去 → `run/eula.txt` 写 `eula=true` → `server.properties` 设 `level-name=smoke`、`enable-rcon=true`、`rcon.port=25575`、`rcon.password=hush-smoke` → `\gradlew.bat runServer`；看到 `run/logs/latest.log` 的 `HUSH_SMOKE_DONE` 后，在另一个窗口执行 `python ci\rcon_stop.py 127.0.0.1 25575 hush-smoke stop` 停服。
+  - `smoke`：无头 `runServer`，两个阶段。① 用 `ci/smoke-datapack` 在启动后 summon 实体并打印 `HUSH_SMOKE_*` 标记，断言 Mixin 与实体注册未在加载时报错；② 标记出现后跑 `ci/fake_player_smoke.py`：下载 Carpet（`ci/fetch_carpet.py`）用 `/player` 造真玩家，逐项断言注视静止、Boss 形态、阶段 2/3/4 护甲与体型、阶段 4 增益、吐口水、脱战回血；报告写 `build/smoke-report.txt` 并作为 artifact 上传；驱动脚本自己发 `stop`，超时由 `ci/rcon_stop.py` 兜底；只改 `docs/**` 或 `*.md` 的 PR 自动跳过该 job。
+- 本地复现冒烟：`mkdir run/smoke/datapacks` → 复制 `ci/smoke-datapack` 进去 → `python ci\fetch_carpet.py`（拉 Carpet 到 `run/mods`） → `run/eula.txt` 写 `eula=true` → `server.properties` 设 `level-name=smoke`、`enable-rcon=true`、`rcon.port=25575`、`rcon.password=hush-smoke`、`level-type=minecraft\:flat` → `$env:HUSH_DEBUG='1'` → `\gradlew.bat runServer`；看到 `HUSH_SMOKE_DONE` 后在 `ci` 目录跑 `python fake_player_smoke.py --report ..\build\smoke-report.txt --log ..\run\logs\latest.log`（它自己停服）；只想手动看时用 `python ci\rcon_cmd.py 127.0.0.1 25575 hush-smoke --file <命令文件>`。
 - 规则集已把 `build` 设为必需状态检查（`strict=false`）：PR 的 `build` 没通过就不能合；改工作流时不能改 job 名，否则规则集的 context 对不上，合并会一直卡在 Expected。
 - PR 正文至少包含：改了什么、怎么验证的、没验证什么。
 
