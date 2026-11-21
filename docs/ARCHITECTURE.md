@@ -17,7 +17,8 @@ com.example.hush
 ├── combat/                  纯数值与纯几何
 │   ├── CombatProfile        阶段表（伤害/护甲/距离）
 │   ├── GazeWatch            「玩家是否注视目标」的角度/距离判定
-│   └── SonicCycle           声波蓄力/间隔节拍（Boss 与阶段 1 各一个实例）
+│   ├── SonicCycle           声波蓄力/间隔节拍（Boss 与阶段 1 各一个实例）
+│   └── AttackBand           距离 → 攻击档（近战/口水/随机/声波/只追）
 ├── hearing/                 听觉与愤怒
 │   └── AngerLedger          每个玩家的愤怒、配对窗口、限频、衰减（无 Minecraft 类型）
 ├── entity/
@@ -49,9 +50,10 @@ com.example.hush
 | --- | --- | --- | --- |
 | 一 | AI Goal 拆到 `entity/goal`，账本、粒子各自成类 | 已完成 | `build` 通过；21 项单测（9 + 12）；实体 1990 → 约 1600 行 |
 | 二 | 声波节拍抽成 `combat/SonicCycle`，传送落点搜索抽成 `entity/TeleportSearch` | 已完成 | `build` 通过；31 项单测（9 + 12 + 5 + 5）；实体再减约 50 行 |
-| 三 | 换基类（`LlamaEntity` → `PathAwareEntity`） | 未开始 | 需要游戏内存档兼容验证，不在地面改 |
-| 四 | 口水去掉 `LlamaSpitEntity` 继承，抄写原版弹道与渲染 | 未开始 | 需要游戏内验证弹道与命中，先注册自有类型（已完成） |
-| 五 | 剩余硬编码数值并入 `CombatProfile` | 未开始 | 数值表与 SPEC 同步 |
+| 三 | 距离 → 攻击档抽成 `combat/AttackBand`，实体只负责执行 | 已完成 | `build` 通过；36 项单测；实体再减约 30 行 |
+| 四 | 换基类（`LlamaEntity` → `PathAwareEntity`） | 未开始 | 需要游戏内存档兼容验证，不在地面改 |
+| 五 | 口水去掉 `LlamaSpitEntity` 继承，抄写原版弹道与渲染 | 未开始 | 需要游戏内验证弹道与命中，先注册自有类型（已完成） |
+| 六 | 剩余硬编码数值并入 `CombatProfile` | 未开始 | 数值表与 SPEC 同步 |
 
 ## 5. 不做的事
 

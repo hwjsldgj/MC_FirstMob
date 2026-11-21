@@ -35,6 +35,9 @@ public final class CombatProfile {
 	/** 阶段 4 超过 64 格只追不打。 */
 	public static final double CHASE_ONLY_RANGE = 64.0D;
 	/** 阶段 4 的随机档：17~24 格。 */
+	/** 近战接管距离：所有阶段都是 5 格。 */
+	public static final double MELEE_RANGE = 5.0D;
+	/** 阶段 4 的随机档：17~24 格。 */
 	public static final double RANDOM_BAND_MIN_RANGE = 17.0D;
 	public static final double RANDOM_BAND_MAX_RANGE = 24.0D;
 	/** 随机档里 75% 吐口水 8 点、25% 放声波 12 点，都带击退。 */

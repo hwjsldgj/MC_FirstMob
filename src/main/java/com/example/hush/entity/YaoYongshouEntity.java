@@ -4,6 +4,7 @@ import java.util.UUID;
 import java.util.function.BiConsumer;
 
 import com.example.hush.Hush;
+import com.example.hush.combat.AttackBand;
 import com.example.hush.combat.CombatProfile;
 import com.example.hush.combat.GazeWatch;
 import com.example.hush.combat.SonicCycle;
@@ -123,7 +124,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** 反击超时：5 秒内一次都没打出去（追不到 / 目标无敌）就放弃。 */
 	private static final int REVENGE_TIMEOUT_TICKS = 100;
 	/** 所有阶段的近战接管距离都是 5 格（阶段 1 也放宽到 5 格）。 */
-	private static final double MELEE_RANGE_SQUARED = 25.0D;
+	private static final double MELEE_RANGE_SQUARED = CombatProfile.MELEE_RANGE * CombatProfile.MELEE_RANGE;
 	/**
 	 * 近战伤害类型：data/hush/damage_type/yao_melee.json。
 	 * <p>`scaling: never` 是必须的——原版 `mob_attack` 在和平难度会被整段清零，
@@ -522,33 +523,10 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		return (float) CombatProfile.sonicDamage(this.phase);
 	}
 
-	/** 口水最大距离的平方：阶段 1 为 24，其余为 16。 */
-	private double spitRangeSquared() {
-		double range = CombatProfile.spitRange(this.phase);
-		return range * range;
-	}
-
-	/** 声波攻击外边界（含边追边打）：24 / 32 / 48 / 64。 */
-	private double sonicAttackMaxRangeSquared() {
-		double range = CombatProfile.sonicMaxRange(this.phase);
-		return range * range;
-	}
-
-	/** 声波内边界：阶段 4 从 25 格起，其余从 17 格起。 */
-	private double sonicMinRangeSquared() {
-		double range = CombatProfile.sonicMinRange(this.phase);
-		return range * range;
-	}
-
 	/** 追到多远停下：8 / 16 / 16 / 32。 */
 	private double chaseStopRangeSquared() {
 		double range = CombatProfile.chaseStopRange(this.phase);
 		return range * range;
-	}
-
-	/** 阶段 4 的 17~24 格随机档。 */
-	private boolean inPhase4RandomBand(double distanceSquared) {
-		return CombatProfile.inRandomBand(this.phase, distanceSquared);
 	}
 
 	/** 改属性基值；只有缩放变了才重算碰撞箱，护甲/韧性每 tick 同步时不白算一遍。 */
@@ -605,42 +583,34 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			this.updateBossSonic(target);
 			return;
 		}
-		if (distanceSquared <= this.meleeRangeSquared()) {
-			// 5 格内只近战
-			this.bossSonicCycle.reset();
-			return;
-		}
-		if (distanceSquared <= this.spitRangeSquared()) {
-			// 6~16（阶段 1 为 6~24）：吐口水
-			this.bossSonicCycle.reset();
-			if (now >= this.nextSpitTick) {
-				this.shootAt(target, 1.0F);
-				this.nextSpitTick = now + SPIT_COOLDOWN_TICKS;
-			}
-			return;
-		}
-		if (this.inPhase4RandomBand(distanceSquared)) {
-			// 阶段 4 的 17~24 格：口水/声波 3:1，均带击退
-			this.bossSonicCycle.reset();
-			if (now >= this.nextSpitTick) {
-				this.nextSpitTick = now + SPIT_COOLDOWN_TICKS;
-				if (this.random.nextFloat() < CombatProfile.RANDOM_SPIT_CHANCE) {
-					this.shootSpit(target, CombatProfile.RANDOM_SPIT_DAMAGE, 0.0F, this.spitKnockback());
-				} else {
-					this.fireSonicBoom(target, CombatProfile.RANDOM_SONIC_DAMAGE);
+		switch (AttackBand.forDistance(this.phase, distanceSquared)) {
+			case MELEE -> // 5 格内只近战
+					this.bossSonicCycle.reset();
+			case SPIT -> {
+				// 6~16（阶段 1 为 6~24）：吐口水
+				this.bossSonicCycle.reset();
+				if (now >= this.nextSpitTick) {
+					this.shootAt(target, 1.0F);
+					this.nextSpitTick = now + SPIT_COOLDOWN_TICKS;
 				}
 			}
-			return;
+			case RANDOM -> {
+				// 阶段 4 的 17~24 格：口水/声波 3:1，均带击退
+				this.bossSonicCycle.reset();
+				if (now >= this.nextSpitTick) {
+					this.nextSpitTick = now + SPIT_COOLDOWN_TICKS;
+					if (this.random.nextFloat() < CombatProfile.RANDOM_SPIT_CHANCE) {
+						this.shootSpit(target, CombatProfile.RANDOM_SPIT_DAMAGE, 0.0F, this.spitKnockback());
+					} else {
+						this.fireSonicBoom(target, CombatProfile.RANDOM_SONIC_DAMAGE);
+					}
+				}
+			}
+			case SONIC -> // 声波段：17~32 / 17~48 / 25~64，边追边打
+					this.updateBossSonic(target);
+			case CHASE_ONLY -> // 距离在声波攻击区间之外（阶段 4 >64 格）：只追不打
+					this.bossSonicCycle.reset();
 		}
-		double sonicMin = this.sonicMinRangeSquared();
-		double sonicMax = this.sonicAttackMaxRangeSquared();
-		if (distanceSquared >= sonicMin && distanceSquared <= sonicMax) {
-			// 声波段：17~32 / 17~48 / 25~64，边追边打
-			this.updateBossSonic(target);
-			return;
-		}
-		// 距离在声波攻击区间之外（阶段 4 >64 格）：只追不打
-		this.bossSonicCycle.reset();
 	}
 
 	/** 移动速度：空闲游走 III；阶段 1 无基础速度、追逐 I；阶段 2+ 基础 I、追逐 II；阶段 4 >64 格追逐 III。 */

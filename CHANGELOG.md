@@ -32,6 +32,7 @@
 - 开启 Gradle 构建缓存（`org.gradle.caching=true`）：本地重复构建直接复用，CI 的 `smoke` job 可从 `setup-gradle` 缓存命中编译产物
 - CI 把三个 Loom 端点覆盖参数抽成 workflow 级 `LOOM_ARGS`，`build` 与 `smoke` 共用；`hush-jar` artifact 排除 `-sources.jar`
 - 拆分第二步：声波节拍抽成 `combat/SonicCycle`（蓄力 34 tick / 间隔 160 tick，Boss 与阶段 1 各一个实例），传送落点搜索抽成 `entity/TeleportSearch`；实体减约 50 行，行为不变；新增 `SonicCycleTest`（5 例），单测总数 31
+- 拆分第三步：BOSS 阶段的「距离 → 攻击档」抽成 `combat/AttackBand`（`MELEE` / `SPIT` / `RANDOM` / `SONIC` / `CHASE_ONLY`），实体只负责执行；`CombatProfile` 补 `MELEE_RANGE = 5`，删掉四个只给这条分支用的距离换算方法；实体再减约 30 行；新增 `AttackBandTest`（5 例），单测总数 36
 
 ### 文档
 
