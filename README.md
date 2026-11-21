@@ -148,4 +148,4 @@ docs/                               # SPEC / API / 文档索引
 
 ## 许可
 
-CC0-1.0，见 [LICENSE](LICENSE)。
+本模组仍在开发阶段，**保留全部权利**（All Rights Reserved），未授予任何使用许可；正式发布后将改用并公布正式许可协议。详见 [LICENSE](LICENSE)。

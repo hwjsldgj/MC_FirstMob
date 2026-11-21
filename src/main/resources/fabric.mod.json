@@ -7,7 +7,7 @@
 	"authors": [
 		"Hush"
 	],
-	"license": "CC0-1.0",
+	"license": "All-Rights-Reserved",
 	"icon": "assets/hush/icon.png",
 	"environment": "*",
 	"mixins": [
