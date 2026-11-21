@@ -770,15 +770,12 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 
 	/** 空闲且与玩家在 16~32 格的合适距离内：站定注视，不再游走。 */
 	public boolean shouldStandStill() {
-		if (this.bossForm) {
+		if (this.bossForm || this.getTarget() != null) {
 			return false;
 		}
-		// 非 Boss 形态：被注视时不移动（战斗中同样生效），其余行为不变
+		// 仅非战斗（无目标）时生效：被注视就不游走
 		if (this.isWatchedByPlayer()) {
 			return true;
-		}
-		if (this.getTarget() != null) {
-			return false;
 		}
 		PlayerEntity player = this.nearestPlayer();
 		if (player == null) {
@@ -789,7 +786,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	/**
-	 * 非 Boss 形态下是否有玩家正在注视自己（{\@link GazeWatch} 的角度/距离规则）。
+	 * 非 Boss 形态下是否有玩家正在注视自己（{@link GazeWatch} 的角度/距离规则）。
 	 * <p>只看主世界服务端玩家；旁观者、死亡玩家不参与判定。
 	 */
 	public boolean isWatchedByPlayer() {
@@ -1406,8 +1403,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.updateOutOfCombatRegen(now);
 		this.updateMovementSpeed();
 		EntityParticles.speedTrail(this);
-		// 非 Boss 形态被注视：取消本 tick 的寻路，原地不动（攻击照常，追击逻辑不改）
-		if (!this.bossForm && this.isWatchedByPlayer()) {
+		// 非 Boss 且不在战斗中（无目标）被注视：取消寻路，原地不动；战斗时不生效
+		if (!this.bossForm && this.getTarget() == null && this.isWatchedByPlayer()) {
 			this.getNavigation().stop();
 		}
 		this.updateCuriosityLook(now);
