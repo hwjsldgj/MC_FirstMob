@@ -6,6 +6,7 @@ import java.util.function.BiConsumer;
 import com.example.hush.Hush;
 import com.example.hush.combat.CombatProfile;
 import com.example.hush.combat.GazeWatch;
+import com.example.hush.combat.SonicCycle;
 import com.example.hush.entity.goal.CalmLookAroundGoal;
 import com.example.hush.entity.goal.CalmLookAtEntityGoal;
 import com.example.hush.entity.goal.CloseMeleeGoal;
@@ -56,7 +57,6 @@ import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
-import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.random.Random;
@@ -131,10 +131,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	 */
 	public static final RegistryKey<DamageType> MELEE_DAMAGE_TYPE =
 			RegistryKey.of(RegistryKeys.DAMAGE_TYPE, Hush.id("yao_melee"));
-	/** 原版监守者开炮前蓄力 34 tick。 */
-	private static final int SONIC_CHARGE_TICKS = 34;
-	/** 两发声波间隔 160 tick（8 秒），比原版监守者的 5 秒慢。 */
-	private static final int SONIC_INTERVAL_TICKS = 160;
+	/** 原版监守者开炮前蓄力 34 tick、两发间隔 160 tick，见 {@link SonicCycle}。 */
 	/** Boss 掉落经验：普通生物 1~3 点，boss 一次给 500 点。 */
 	private static final int BOSS_XP_REWARD = 500;
 	/** Boss 血条同步间隔：每 tick 都刷新会不停发包，10 tick（0.5 秒）足够跟手。 */
@@ -163,9 +160,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final double TELEPORT_MAX_ANGLE_DEGREES = 145.0D;
 	/** 每次传送最多试几个随机落点，全部失败就走退路。 */
 	private static final int TELEPORT_ATTEMPTS = 6;
-	/** 落点要求 3×3×4 的空地：水平半径 1（宽 3、深 3），高 4 格空气，脚下实心。 */
-	private static final int TELEPORT_SPACE_RADIUS = 1;
-	private static final int TELEPORT_SPACE_HEIGHT = 4;
 	/** 传送失败或退路传送后的重试间隔：5 秒。 */
 	private static final int TELEPORT_RETRY_TICKS = 100;
 	/** 近战挥击动画时长（10 tick = 0.5 秒）：只记开始时的 age，渲染端按插值后的 age 自己算进度。 */
@@ -194,8 +188,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private long revengeDeadline;
 	/** 是否处于声波模式：为 true 时只放声波、不吐口水。 */
 	private boolean sonicMode;
-	/** 距离上一次声波已经过去的 tick 数，用来做蓄力/冷却节拍。 */
-	private int sonicTicks;
+	/** 阶段 1 声波的蓄力 / 循环节拍。 */
+	private final SonicCycle sonicCycle = new SonicCycle();
 	/** 是否处于 Boss 形态：血量 <80% 触发；解除锁定后 30 秒没有目标会退回普通形态。 */
 	private boolean bossForm;
 	/** 退回普通形态后置 true：血量仍 <80% 时保持普通形态，直到重新获得目标才再次变身。 */
@@ -217,8 +211,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private UUID lockTarget;
 	/** 最后一次被玩家打中的世界时间，脱战回血判定用。 */
 	private long lastPlayerDamageTick;
-	/** Boss 阶段声波的蓄力 / 循环节拍。 */
-	private int lockSonicTicks;
+	/** Boss 阶段声波的蓄力 / 循环节拍（与阶段 1 各自独立）。 */
+	private final SonicCycle bossSonicCycle = new SonicCycle();
 	/** 下一次允许吐口水的世界时间，各阶段共用一套冷却。 */
 	private long nextSpitTick;
 	/** 当前速度等级（-1 无 / 0 速度 I / 1 速度 II / 2 速度 III）。 */
@@ -588,7 +582,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		PlayerEntity target = this.resolveBossTarget();
 		if (target == null) {
 			this.stopSonicMode();
-			this.lockSonicTicks = 0;
+			this.bossSonicCycle.reset();
 			this.setTarget(null);
 			this.getNavigation().stop();
 			return;
@@ -613,12 +607,12 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 		if (distanceSquared <= this.meleeRangeSquared()) {
 			// 5 格内只近战
-			this.lockSonicTicks = 0;
+			this.bossSonicCycle.reset();
 			return;
 		}
 		if (distanceSquared <= this.spitRangeSquared()) {
 			// 6~16（阶段 1 为 6~24）：吐口水
-			this.lockSonicTicks = 0;
+			this.bossSonicCycle.reset();
 			if (now >= this.nextSpitTick) {
 				this.shootAt(target, 1.0F);
 				this.nextSpitTick = now + SPIT_COOLDOWN_TICKS;
@@ -627,7 +621,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 		if (this.inPhase4RandomBand(distanceSquared)) {
 			// 阶段 4 的 17~24 格：口水/声波 3:1，均带击退
-			this.lockSonicTicks = 0;
+			this.bossSonicCycle.reset();
 			if (now >= this.nextSpitTick) {
 				this.nextSpitTick = now + SPIT_COOLDOWN_TICKS;
 				if (this.random.nextFloat() < CombatProfile.RANDOM_SPIT_CHANCE) {
@@ -646,7 +640,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			return;
 		}
 		// 距离在声波攻击区间之外（阶段 4 >64 格）：只追不打
-		this.lockSonicTicks = 0;
+		this.bossSonicCycle.reset();
 	}
 
 	/** 移动速度：空闲游走 III；阶段 1 无基础速度、追逐 I；阶段 2+ 基础 I、追逐 II；阶段 4 >64 格追逐 III。 */
@@ -855,7 +849,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			double angle = baseYaw + Math.toRadians(offsetDegrees);
 			double x = player.getX() - Math.sin(angle) * radius;
 			double z = player.getZ() + Math.cos(angle) * radius;
-			Vec3d landing = this.findLandingSpot(serverWorld, x, player.getY(), z);
+			Vec3d landing = TeleportSearch.findLandingSpot(serverWorld, x, player.getY(), z);
 			if (landing != null) {
 				this.doTeleport(landing);
 				debug("TELEPORT near angle={} radius={}", (int) offsetDegrees, (int) radius);
@@ -876,7 +870,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 					+ this.random.nextDouble() * (FALLBACK_TELEPORT_RADIUS_MAX - FALLBACK_TELEPORT_RADIUS_MIN);
 			double x = player.getX() + Math.cos(angle) * radius;
 			double z = player.getZ() + Math.sin(angle) * radius;
-			Vec3d landing = this.findLandingSpot(serverWorld, x, player.getY(), z);
+			Vec3d landing = TeleportSearch.findLandingSpot(serverWorld, x, player.getY(), z);
 			if (landing != null) {
 				this.doTeleport(landing);
 				debug("TELEPORT far radius={}", (int) radius);
@@ -892,63 +886,24 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.setVelocity(0.0D, 0.0D, 0.0D);
 	}
 
-	/** 在给定水平坐标上下扫 8 格，找 3×3×4 空地的落点；找不到返回 null。 */
-	private Vec3d findLandingSpot(ServerWorld world, double x, double baseY, double z) {
-		BlockPos.Mutable pos = new BlockPos.Mutable();
-		int startY = MathHelper.floor(baseY) + 8;
-		int endY = MathHelper.floor(baseY) - 8;
-		for (int y = startY; y >= endY; y--) {
-			pos.set(x, y, z);
-			long chunkPos = ChunkPos.toLong(pos.getX() >> 4, pos.getZ() >> 4);
-			if (!world.isChunkLoaded(chunkPos)) {
-				continue;
-			}
-			if (this.isTeleportSpaceClear(world, pos)) {
-				return new Vec3d(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D);
-			}
-		}
-		return null;
-	}
-
-	/** 3×3 脚下实心 + 3×3×4 全空气（Boss 形态 2 倍体型也放得下）。 */
-	private boolean isTeleportSpaceClear(ServerWorld world, BlockPos origin) {
-		for (int dx = -TELEPORT_SPACE_RADIUS; dx <= TELEPORT_SPACE_RADIUS; dx++) {
-			for (int dz = -TELEPORT_SPACE_RADIUS; dz <= TELEPORT_SPACE_RADIUS; dz++) {
-				BlockPos ground = origin.add(dx, -1, dz);
-				if (!world.getBlockState(ground).isSolidBlock(world, ground)) {
-					return false;
-				}
-				for (int dy = 0; dy < TELEPORT_SPACE_HEIGHT; dy++) {
-					if (!world.getBlockState(origin.add(dx, dy, dz)).isAir()) {
-						return false;
-					}
-				}
-			}
-		}
-		return true;
-	}
 
 	/** 声波蓄力已经开始但还没开炮：这段时间不切换近战/口水，先把这一发打完。 */
 	public boolean isSonicCharging() {
 		if (!this.bossForm) {
-			return this.sonicMode && this.sonicTicks > 0 && this.sonicTicks < SONIC_CHARGE_TICKS;
+			return this.sonicMode && this.sonicCycle.isCharging();
 		}
-		return this.lockSonicTicks > 0 && this.lockSonicTicks < SONIC_CHARGE_TICKS;
+		return this.bossSonicCycle.isCharging();
 	}
 
 	/** Boss 阶段：蓄力 34 tick 后按阶段伤害开炮，循环 160 tick。 */
 	private void updateBossSonic(PlayerEntity target) {
-		if (this.lockSonicTicks == 0) {
+		if (this.bossSonicCycle.isIdle()) {
 			this.playSound(ModSounds.SONIC_CHARGE, 3.0F, 1.0F);
 		}
 		this.faceTarget(target);
-		this.lockSonicTicks++;
-		if (this.lockSonicTicks == SONIC_CHARGE_TICKS) {
+		if (this.bossSonicCycle.tick()) {
 			this.fireSonicBoom(target, this.sonicDamage());
 			debug("BOSS sonic fire dist={} phase={}", (int) Math.sqrt(this.squaredDistanceTo(target)), this.phase);
-		}
-		if (this.lockSonicTicks >= SONIC_INTERVAL_TICKS) {
-			this.lockSonicTicks = 0;
 		}
 	}
 
@@ -1216,7 +1171,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			if (anger >= ANGER_ANGRY_EXIT && inSonicRange) {
 				if (!prime.getUuid().equals(this.sonicTarget)) {
 					this.sonicTarget = prime.getUuid();
-					this.sonicTicks = 0;
+					this.sonicCycle.reset();
 					this.setTarget(prime);
 				}
 				return;
@@ -1426,7 +1381,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** 激怒：进入声波模式，目标跑出 24 格、死亡或愤怒回落时退出。 */
 	private void enterSonicMode(PlayerEntity player, long now) {
 		this.sonicMode = true;
-		this.sonicTicks = 0;
+		this.sonicCycle.reset();
 		this.sonicTarget = player.getUuid();
 		this.revengeMode = false;
 		this.revengeShots = 0;
@@ -1441,7 +1396,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			return;
 		}
 		this.sonicMode = false;
-		this.sonicTicks = 0;
+		this.sonicCycle.reset();
 		this.sonicTarget = null;
 		debug("SONIC exit");
 	}
@@ -1463,21 +1418,18 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		if (this.getTarget() != player) {
 			this.setTarget(player);
 		}
-		if (this.sonicTicks == 0) {
+		if (this.sonicCycle.isIdle()) {
 			this.playSound(ModSounds.SONIC_CHARGE, 3.0F, 1.0F);
 		}
 		this.faceTarget(player);
-		this.sonicTicks++;
+		boolean charged = this.sonicCycle.tick();
 		// 17~24 格才开炮；6~16 格由口水接管（shootAt 会在 17~24 格拒绝口水）
 		double minRange = CombatProfile.sonicMinRange(1);
 		double maxRange = CombatProfile.sonicMaxRange(1);
-		if (this.sonicTicks == SONIC_CHARGE_TICKS
+		if (charged
 				&& this.squaredDistanceTo(player) >= minRange * minRange
 				&& this.squaredDistanceTo(player) <= maxRange * maxRange) {
 			this.fireSonicBoom(player, this.sonicDamage());
-		}
-		if (this.sonicTicks >= SONIC_INTERVAL_TICKS) {
-			this.sonicTicks = 0;
 		}
 	}
 
@@ -1657,7 +1609,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 				// 换了个玩家贴脸打：声波跟着换目标，不中断
 				this.ledger.setAnger(player.getUuid(), ANGER_ANGRY);
 				this.sonicTarget = player.getUuid();
-				this.sonicTicks = 0;
+				this.sonicCycle.reset();
 				this.setTarget(living);
 				return damaged;
 			}
