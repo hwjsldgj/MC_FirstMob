@@ -46,3 +46,4 @@ replay_*.log
 Thumbs.db
 desktop.ini
 
+__pycache__/

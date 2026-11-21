@@ -18,6 +18,15 @@ repositories {
 loom {
 	splitEnvironmentSourceSets()
 
+	runs {
+		server {
+			// 冒烟测试需要 [Hush] 调试日志；CI 里用 HUSH_DEBUG=1 打开，平时不啰嗦
+			if (System.getenv("HUSH_DEBUG")) {
+				property "hush.debug", "true"
+			}
+		}
+	}
+
 	mods {
 		"hush" {
 			sourceSet sourceSets.main
