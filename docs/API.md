@@ -105,7 +105,7 @@ public class Hush implements ModInitializer {
 | `isWatchedByPlayer()` | 非 Boss 形态下，32 格内有存活、非旁观玩家的视线夹角 ≤60° 时为 `true`；不依赖 Minecraft 几何的部分由 `GazeWatch` 计算 |
 | `shouldStandStill()` | 非 Boss、**无目标**且被注视时为 `true`（战斗中不生效）；否则仅在无目标且与玩家距离 16~32 格时为 `true` |
 | `meleeDamage()` / `meleePiercing()` / `spitDamage()` / `spitPiercing()` / `spitKnockback()` / `sonicDamage()` | 阶段数值档案：委托 `com.example.hush.combat.CombatProfile`（纯数值表，不依赖 Minecraft 类，由 `CombatProfileTest` 覆盖） |
-| `spitRangeSquared()` / `sonicMinRangeSquared()` / `sonicAttackMaxRangeSquared()` / `chaseStopRangeSquared()` | 阶段距离档案 |
+| `chaseStopRangeSquared()` | 追停距离：8 / 16 / 16 / 32；其余距离档由 `AttackBand` / `CombatProfile` 提供 |
 | 阶段目标解析 | `resolveBossTarget()` |
 
 阶段 1 保留：`hearVibrationFrom` / `hearSupplement` / `triggerCuriosity` / `updateAngerBehavior` / `updateSonicMode` / 反击计数。
@@ -147,6 +147,7 @@ public class Hush implements ModInitializer {
 | `SonicCycle` | `CHARGE_TICKS = 34`、`INTERVAL_TICKS = 160`、`tick()`（返回本 tick 是否开炮）、`isIdle()`、`isCharging()`、`reset()` | 声波蓄力/间隔节拍；实体持有两个实例（Boss 阶段 / 阶段 1）；由 `SonicCycleTest` 覆盖 |
 | `AttackBand` | `forDistance(phase, distanceSquared)` → `MELEE` / `SPIT` / `RANDOM` / `SONIC` / `CHASE_ONLY` | 距离→攻击档的查表（顺序即优先级）；由 `AttackBandTest` 覆盖 |
 | `TeleportSearch` | `findLandingSpot(ServerWorld, x, baseY, z)`、`isSpaceClear(ServerWorld, BlockPos)` | 传送落点搜索（3×3×4 空地判定）；只读方块，不改变实体状态 |
+| `BossBarView` | `track` / `untrack` / `hide` / `clear` / `update(shouldShow, age, percent, berserk, title)` | Boss 血条：只发给追踪玩家、10 tick 节流、阶段 4 紫色「（狂暴）」；只写血条状态 |
 
 ### 3.6 客户端
 
