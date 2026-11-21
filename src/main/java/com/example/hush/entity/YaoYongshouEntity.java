@@ -759,7 +759,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			}
 			Vec3d look = player.getRotationVec(1.0F);
 			Vec3d from = player.getEyePos();
-			if (GazeWatch.isWatching(eye.x - from.x, eye.y - from.y, eye.z - from.z,
+			// CI 检测演练：模拟注视判定失效，验证假玩家场景能发现行为回归
+			if (false && GazeWatch.isWatching(eye.x - from.x, eye.y - from.y, eye.z - from.z,
 					look.x, look.y, look.z, Math.sqrt(player.squaredDistanceTo(this)))) {
 				return true;
 			}
