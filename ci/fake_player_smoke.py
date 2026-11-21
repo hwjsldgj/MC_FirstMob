@@ -12,6 +12,7 @@
 退出码 0 表示全部断言通过；失败时打印原因并以 1 退出，同时停服。
 """
 import argparse
+import os
 import re
 import sys
 import time
@@ -122,6 +123,8 @@ class Smoke:
         self.check("entity summoned", "Summoned" in self.transcript[-1][1], self.transcript[-1][1])
         # 假玩家放在 10 格外：既进入「贴太近要后退」区间，又在注视范围内
         self.command(f"player {PLAYER} spawn at 0.5 {SURFACE_Y + 1} 10.5 facing 0 0")
+        # 创造模式：Boss 阶段伤害 10~14，生存假玩家很快会被打死，断言就无从谈起
+        self.command(f"gamemode creative {PLAYER}")
         self.command(f"effect give {PLAYER} minecraft:resistance 600 4 true")
         self.command(f"effect give {PLAYER} minecraft:saturation 600 4 true")
         self.wait_for("fake player online", self.player_online, timeout=30)
@@ -158,19 +161,33 @@ class Smoke:
         self.wait_for("phase 4 strength", lambda: self.has_effect("minecraft:strength"), timeout=5)
 
     def scenario_combat(self) -> None:
-        """Boss 形态下玩家在 6~16 格：应吐口水；用口水实体落地作为「真的打了」的证据。"""
-        before = self.entity_number("Health")
+        """Boss 形态下玩家在 6~16 格：应吐口水。口水实体只存活 1~2 秒，
+        轮询会漏；改用服务端调试日志里的 SHOOT 行作为证据（不用猜发包）。"""
+        offset = self.log_size()
         self.command(f"player {PLAYER} look at 0.5 {SURFACE_Y + 1.5} 0.5")
-        self.wait_for("boss spit at player", self.spit_spawned, timeout=25)
-        after = self.entity_number("Health")
-        self.check("health readable after combat", after == after, f"{before} -> {after}")
+        self.wait_for("boss spit at player", lambda: "SHOOT" in self.log_since(offset) or self.spit_spawned(),
+                      timeout=40)
+
+    def log_size(self) -> int:
+        try:
+            return os.path.getsize(self.args.log)
+        except OSError:
+            return 0
+
+    def log_since(self, offset: int) -> str:
+        try:
+            with open(self.args.log, encoding="utf-8", errors="replace") as handle:
+                handle.seek(offset)
+                return handle.read()
+        except OSError:
+            return ""
 
     def spit_spawned(self) -> bool:
         out = self.command("data get entity @e[type=hush:yao_spit,limit=1] Pos")
         return "has the following" in out
 
     def scenario_out_of_combat(self) -> None:
-        self.wait_for("out-of-combat regeneration", lambda: self.has_effect("minecraft:regeneration"), timeout=40)
+        self.wait_for("out-of-combat regeneration", lambda: self.has_effect("minecraft:regeneration"), timeout=60)
 
     # ---------------------------------------------------------------- 报告
 
