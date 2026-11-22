@@ -137,7 +137,7 @@ jobs:
           # 假玩家由 Carpet 提供：只进测试环境，不参与模组依赖
           python3 ci/fetch_carpet.py
           printf 'eula=true\n' > run/eula.txt
-          printf 'level-name=smoke\nonline-mode=false\nmax-tick-time=-1\nspawn-protection=0\nenable-rcon=true\nrcon.port=25575\nrcon.password=hush-smoke\nbroadcast-rcon-to-ops=false\n' > run/server.properties
+          printf 'level-name=smoke\nlevel-type=minecraft:flat\nonline-mode=false\nmax-tick-time=-1\nspawn-protection=0\nenable-rcon=true\nrcon.port=25575\nrcon.password=hush-smoke\nbroadcast-rcon-to-ops=false\n' > run/server.properties
 
       # 冒烟数据包启动后 summon 实体并打印标记；标记出现即通过 RCON 优雅停服，
       # 不必等超时，整步从 ~3 分钟降到 ~1 分钟。超时只是兜底。
