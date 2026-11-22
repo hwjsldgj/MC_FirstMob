@@ -133,17 +133,33 @@ class Smoke:
         return PLAYER in self.command("list")
 
     def scenario_freeze(self) -> None:
-        """10 格内被注视：不应继续后退，位置基本不变。"""
+        """注视判定要有可观测证据：冻结时打 `GAZE freeze`，背对时不打。
+
+        只测位移不够——空闲的怪本来就常常站着不动，注视判定坏成 false 也能骗过断言。
+        """
+        offset = self.log_size()
         self.command(f"player {PLAYER} look at 0.5 {SURFACE_Y + 1.5} 0.5")
-        time.sleep(2)
-        before = self.entity_pos()
+        time.sleep(3)
+        self.check("gaze freeze (watched: branch entered)", "GAZE freeze" in self.log_since(offset),
+                   "GAZE freeze logged")
+        watched = self.moved_for(4)
+        self.check("gaze freeze (no back-off)", watched < 0.5, f"moved {watched:.2f} blocks in 4s")
+
+        self.command(f"player {PLAYER} look at 0.5 {SURFACE_Y + 1.5} 40.5")
+        # 旋转生效 + 节流残线落地（日志最多每秒一条，转身那一瞬可能还有 1~2 条）
+        time.sleep(3)
+        offset = self.log_size()
         time.sleep(4)
+        self.check("gaze control (unwatched: branch skipped)",
+                   "GAZE freeze" not in self.log_since(offset), "no GAZE freeze while looking away")
+
+    def moved_for(self, seconds: float) -> float:
+        before = self.entity_pos()
+        time.sleep(seconds)
         after = self.entity_pos()
         if before is None or after is None:
-            self.check("gaze freeze", False, "position unreadable")
-            return
-        moved = sum((a - b) ** 2 for a, b in zip(before, after)) ** 0.5
-        self.check("gaze freeze (no back-off)", moved < 0.5, f"moved {moved:.2f} blocks in 4s")
+            return float("nan")
+        return sum((a - b) ** 2 for a, b in zip(before, after)) ** 0.5
 
     def scenario_phases(self) -> None:
         # 直接改 Health，避开护甲减伤（Boss 阶段护甲 15~20，/damage 30 实际只掉十几点）
