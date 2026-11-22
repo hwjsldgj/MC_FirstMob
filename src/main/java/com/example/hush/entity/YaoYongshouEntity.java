@@ -208,6 +208,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private UUID lockTarget;
 	/** 最后一次被玩家打中的世界时间，脱战回血判定用。 */
 	private long lastPlayerDamageTick;
+	/** 上次打 GAZE 调试日志的游戏刻（20 tick 节流），供冒烟测试做可观测证据。 */
+	private long lastGazeLogTick;
 	/** Boss 阶段声波的蓄力 / 循环节拍（与阶段 1 各自独立）。 */
 	private final SonicCycle bossSonicCycle = new SonicCycle();
 	/** 下一次允许吐口水的世界时间，各阶段共用一套冷却。 */
@@ -1308,6 +1310,10 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		// 非 Boss 且不在战斗中（无目标）被注视：取消寻路，原地不动；战斗时不生效
 		if (!this.bossForm && this.getTarget() == null && this.isWatchedByPlayer()) {
 			this.getNavigation().stop();
+			if (now - this.lastGazeLogTick >= 20L) {
+				this.lastGazeLogTick = now;
+				this.debug("GAZE freeze");
+			}
 		}
 		this.updateCuriosityLook(now);
 	}

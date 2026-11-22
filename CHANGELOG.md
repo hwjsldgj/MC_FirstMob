@@ -36,6 +36,8 @@
 - 拆分第四步：Boss 血条抽成 `visual/BossBarView`（追踪/隐藏/清空、10 tick 节流、阶段 4 紫色「（狂暴）」），实体只传「是否显示 / 血量比例 / 阶段」；实体再减约 25 行，行为不变；单测仍 36 条（纯表现类，无新增可测逻辑）
 - 冒烟测试升级：用 Carpet（`ci/fetch_carpet.py` 从 Modrinth 拉 1.21.1 构建，仅测试环境）的 `/player` 造真玩家，`ci/fake_player_smoke.py` 逐项断言注视静止、Boss 形态、阶段 2/3/4 的护甲与体型、阶段 4 增益、吐口水、脱战回血；13 项断言全过；报告 `build/smoke-report.txt`（含 `[Hush]` 调试行与命令回放）作为 artifact；`HUSH_DEBUG=1` 让 `build.gradle` 给服务端 JVM 传 `-Dhush.debug=true`；新增 `ci/rcon.py`、`ci/rcon_cmd.py`（支持 `--file` 批量命令）
 - 同步文档：单测 36 条 / 5 个类、假玩家冒烟 12 项断言；README、API、COUPLING、ARCHITECTURE 补齐版本区间、客户端资源复用、穿甲无自动覆盖等边界
+- 注视冻结分支每 20 tick 打一条 `GAZE freeze` 调试日志（仅 `-Dhush.debug=true`），供冒烟测试做可观测证据
+- 假玩家冒烟：注视断言改为对照组——看住时日志必须出现 `GAZE freeze`，背对时必须消失；旧版只量 4 秒位移，怪本来就常常站着不动，判定坏掉也能骗过（增加至 14 项断言）
 
 ### 文档
 
