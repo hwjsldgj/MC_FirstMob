@@ -54,17 +54,20 @@ import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.random.Random;
+import net.minecraft.world.World;
 import net.minecraft.world.event.EntityPositionSource;
 import net.minecraft.world.event.GameEvent;
 import net.minecraft.world.event.PositionSource;
 import net.minecraft.world.event.Vibrations;
 import net.minecraft.world.event.listener.EntityGameEventHandler;
-import net.minecraft.world.World;
+import net.minecraft.world.RaycastContext;
 
 /**
  * 姚永寿：只保留僵尸的外形（由渲染器负责），行为沿用羊驼的普通寻路与吐口水，
@@ -194,8 +197,14 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private UUID lockTarget;
 	/** 最后一次被玩家打中的世界时间，脱战回血判定用。 */
 	private long lastPlayerDamageTick;
+	/** 注视判定的采样间隔：5 tick（0.25 秒），最多晚这么久才发现玩家开始/停止注视。 */
+	private static final int GAZE_CHECK_INTERVAL_TICKS = 5;
+
 	/** 上次打 GAZE 调试日志的游戏刻（20 tick 节流），供冒烟测试做可观测证据。 */
 	private long lastGazeLogTick;
+	/** 上次注视判定的游戏刻与结果，避免每 tick 对每个玩家跑一次射线。 */
+	private long lastGazeCheckTick;
+	private boolean lastGazeResult;
 	/** Boss 阶段声波的蓄力 / 循环节拍（与阶段 1 各自独立）。 */
 	private final SonicCycle bossSonicCycle = new SonicCycle();
 	/** 下一次允许吐口水的世界时间，各阶段共用一套冷却。 */
@@ -733,26 +742,47 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	/**
-	 * 非 Boss 形态下是否有玩家正在注视自己（{@link GazeWatch} 的角度/距离规则）。
+	 * 非 Boss 形态下是否有玩家正在注视自己（{@link GazeWatch} 的角度/距离规则 + 方块遮挡）。
 	 * <p>只看主世界服务端玩家；旁观者、死亡玩家不参与判定。
+	 * <p>每 {@value #GAZE_CHECK_INTERVAL_TICKS} tick 采样一次，最多 0.25 秒延迟。
 	 */
 	public boolean isWatchedByPlayer() {
 		if (this.bossForm || !(this.getWorld() instanceof ServerWorld world)) {
 			return false;
 		}
+		long now = world.getTime();
+		if (now - this.lastGazeCheckTick < GAZE_CHECK_INTERVAL_TICKS) {
+			return this.lastGazeResult;
+		}
+		this.lastGazeCheckTick = now;
+		this.lastGazeResult = this.scanGaze(world);
+		return this.lastGazeResult;
+	}
+
+	private boolean scanGaze(ServerWorld world) {
 		Vec3d eye = this.getEyePos();
 		for (PlayerEntity player : world.getPlayers()) {
 			if (!player.isAlive() || player.isSpectator()) {
 				continue;
 			}
-			Vec3d look = player.getRotationVec(1.0F);
 			Vec3d from = player.getEyePos();
-			if (GazeWatch.isWatching(eye.x - from.x, eye.y - from.y, eye.z - from.z,
+			Vec3d look = player.getRotationVec(1.0F);
+			if (!GazeWatch.isWatching(eye.x - from.x, eye.y - from.y, eye.z - from.z,
 					look.x, look.y, look.z, Math.sqrt(player.squaredDistanceTo(this)))) {
+				continue;
+			}
+			if (!isSightBlocked(world, from, eye, player)) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	/** 连线上有方块碰撞箱时算挡住；玻璃、树叶这类有碰撞箱的方块也会挡住。 */
+	private static boolean isSightBlocked(ServerWorld world, Vec3d from, Vec3d to, Entity source) {
+		BlockHitResult hit = world.raycast(new RaycastContext(from, to,
+				RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, source));
+		return hit.getType() != HitResult.Type.MISS;
 	}
 
 	/** 沿"玩家 → 自己"的方向退到 16 格以外。 */
