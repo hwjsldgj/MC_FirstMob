@@ -71,6 +71,11 @@ class Smoke:
         out = self.command(f"data get entity {ENTITY} {field}")
         return "1b" in out
 
+    def player_health(self) -> float:
+        out = self.command(f"data get entity {PLAYER} Health")
+        match = re.search(r"data:\s*(-?[\d.]+)", out)
+        return float(match.group(1)) if match else float("nan")
+
     def entity_pos(self):
         out = self.command(f"data get entity {ENTITY} Pos")
         numbers = re.findall(r"-?\d+\.\d+", out)
@@ -95,6 +100,7 @@ class Smoke:
             self.scenario_freeze()
             self.scenario_phases()
             self.scenario_combat()
+            self.scenario_damage()
             self.scenario_out_of_combat()
         finally:
             self.command("player Smoke stop")
@@ -183,6 +189,51 @@ class Smoke:
         self.command(f"player {PLAYER} look at 0.5 {SURFACE_Y + 1.5} 0.5")
         self.wait_for("boss spit at player", lambda: "SHOOT" in self.log_since(offset) or self.spit_spawned(),
                       timeout=40)
+
+    def scenario_damage(self) -> None:
+        """命中：切生存、清效果，站在 6~16 格口水档，确认口水真的打到人、真的掉血。
+
+        只断言「掉血 > 0」：血量上限、抗性、击退都会影响具体数字，硬写数值在 CI 上不稳；
+        穿甲差异（≈4.4 vs ≈1.2）留给手工验证。
+        """
+        self.command(f"gamemode survival {PLAYER}")
+        self.command(f"effect clear {PLAYER}")
+        self.command("gamerule naturalRegeneration false")
+        self.command(f"tp {ENTITY} 0.5 {SURFACE_Y + 1} 0.5")
+        self.command(f"tp {PLAYER} 0.5 {SURFACE_Y + 1} 10.5")
+        time.sleep(0.5)
+
+        distance = self.distance_between()
+        # 6~16 是口水档；被击退后可能从 10 变成 13 左右，别卡太死
+        if distance is None or not 6.5 <= distance <= 16.5:
+            self.check("damage setup (spit band 6~16)", False, f"distance={distance}")
+            return
+        before = self.player_health()
+        after = before
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            time.sleep(0.1)
+            after = self.player_health()
+            if before == before and after == after and after < before - 0.05:
+                break
+        if before != before or after != after or after >= before:
+            self.check("spit hit lowers health", False, f"{before} -> {after}")
+        else:
+            self.check("spit hit lowers survival player's health", True, f"{before} -> {after}")
+
+        # 复原，后面的脱战回血照旧用创造模式
+        self.command(f"gamemode creative {PLAYER}")
+        self.command(f"effect give {PLAYER} minecraft:resistance 600 4 true")
+        self.command("gamerule naturalRegeneration true")
+
+    def distance_between(self):
+        entity = self.entity_pos()
+        out = self.command(f"data get entity {PLAYER} Pos")
+        numbers = re.findall(r"-?\d+\.\d+", out)
+        if entity is None or len(numbers) < 3:
+            return None
+        player = tuple(float(n) for n in numbers[:3])
+        return sum((a - b) ** 2 for a, b in zip(entity, player)) ** 0.5
 
     def log_size(self) -> int:
         try:
