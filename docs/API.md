@@ -178,6 +178,8 @@ public class Hush implements ModInitializer {
 
 Loom 1.15 在 `remapJar` 阶段重映射方法名，**不需要 refmap**。
 
+两个 Mixin 都是 `required: true`，注入失败即启动崩溃。`LivingEntityArmorMixin` 是全局注入（目标是 `LivingEntity`，不只本模组实体），与其它修改护甲或包装 `DamageSource` 的模组共存时没有兼容保证。
+
 ## 4. 资源与数据契约
 
 ### 4.1 `sounds.json`
@@ -225,6 +227,8 @@ Loom 1.15 在 `remapJar` 阶段重映射方法名，**不需要 refmap**。
 | **内部** | 私有字段与常量、Goal 组合、日志文案、`DEBUG` | 可自由改动 |
 
 - 仅支持 Minecraft 1.21.1；升级游戏版本需重新核对 `LlamaEntity`、`ProjectileAttackGoal`、`LivingEntity#applyArmorToDamage` 的签名。
+- `fabric.mod.json` 的版本区间比验证范围宽：`minecraft: ~1.21.1` 语义上接受 1.21.x，`fabric-api` 只有下界；未验证版本会在启动时抛 `InvalidMixinException`。收窄区间前不要对外宣称兼容 1.21.2+。
+- 客户端资源是隐式依赖：僵尸贴图、`EntityModelLayers.ZOMBIE`、`minecraft:entity.llama.*` / `warden.*` 音效事件全部由原版提供，改名或改路径即失效。
 - 不提供配置文件与网络包；行为由编译期常量决定。
 
 ## 6. 扩展指南
