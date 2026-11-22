@@ -142,7 +142,7 @@ public class Hush implements ModInitializer {
 | `ModEntities` | `YAO_YONGSHOU`、`register()` | 注册类型与默认属性 |
 | `ModItems` | `YAO_YONGSHOU_SPAWN_EGG`、`register()` | 刷怪蛋 |
 | `ModSounds` | 6 个 `SoundEvent`、`register()` | 音效事件 |
-| `CombatProfile` | 阶段阈值、护甲、伤害/穿甲/击退、距离分段（含 `MELEE_RANGE = 5`）的常量与查表方法 | 纯 Java、不依赖 Minecraft；战斗数值的单一来源，由 `CombatProfileTest` 覆盖 |
+| `CombatProfile` | 阶段阈值、护甲、伤害/穿甲/击退、距离分段与战斗节奏（口水冷却、反击、脱战回血、变身退回、阶段 4 增益）的常量与查表方法 | 纯 Java、不依赖 Minecraft；战斗数值的单一来源，由 `CombatProfileTest` 覆盖 |
 | `GazeWatch` | `isWatching(dx, dy, dz, lx, ly, lz, distance)`、`MAX_ANGLE_DEGREES = 60`、`MAX_RANGE = 32` | 纯几何的「玩家是否注视目标」判定，不依赖 Minecraft；由 `GazeWatchTest` 覆盖 |
 | `SonicCycle` | `CHARGE_TICKS = 34`、`INTERVAL_TICKS = 160`、`tick()`（返回本 tick 是否开炮）、`isIdle()`、`isCharging()`、`reset()` | 声波蓄力/间隔节拍；实体持有两个实例（Boss 阶段 / 阶段 1）；由 `SonicCycleTest` 覆盖 |
 | `AttackBand` | `forDistance(phase, distanceSquared)` → `MELEE` / `SPIT` / `RANDOM` / `SONIC` / `CHASE_ONLY` | 距离→攻击档的查表（顺序即优先级）；由 `AttackBandTest` 覆盖 |

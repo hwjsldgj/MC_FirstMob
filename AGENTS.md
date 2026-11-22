@@ -27,7 +27,7 @@ Minecraft **1.21.1 Fabric** 模组「肃静」（`hush`），新增生物「姚�
 $env:JAVA_HOME='D:\pcl\jdk-21'
 $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 .\gradlew.bat build     # 产物 build/libs/hush-0.1.0-SNAPSHOT.jar
-.\gradlew.bat test      # 纯逻辑单测 .\gradlew.bat test      # 纯逻辑单测 36 条 / 5 个类（CombatProfile / AngerLedger / GazeWatch / SonicCycle / AttackBand），不需要进入游戏
+.\gradlew.bat test      # 纯逻辑单测 37 条 / 5 个类（CombatProfile / AngerLedger / GazeWatch / SonicCycle / AttackBand），不需要进入游戏
 .\gradlew.bat runClient # 开发客户端，日志 run/logs/latest.log
 ```
 
@@ -57,11 +57,11 @@ src/main/java/com/example/hush
 │   ├── ModItems.java               # 刷怪蛋
 │   └── ModSounds.java              # 自定义音效事件（转发原版声音，换字幕）
 └── combat
-    ├── CombatProfile.java          # 四阶段纯数值表（阈值/护甲/伤害/距离），有单测
+    ├── CombatProfile.java          # 四阶段纯数值表（阈值/护甲/伤害/距离/节奏），有单测
     └── GazeWatch.java              # 「玩家是否注视目标」的角度/距离判定，有单测
 src/test/java/com/example/hush
 ├── combat
-│   ├── CombatProfileTest.java      # 阶段表与距离档的 JUnit 用例（9）
+│   ├── CombatProfileTest.java      # 阶段表、距离档与节奏常量的 JUnit 用例（10）
 │   ├── GazeWatchTest.java          # 注视判定的角度/距离边界用例（5）
 │   ├── SonicCycleTest.java         # 声波蓄力/间隔节拍（5）
 │   └── AttackBandTest.java         # 距离 → 攻击档查表（5）

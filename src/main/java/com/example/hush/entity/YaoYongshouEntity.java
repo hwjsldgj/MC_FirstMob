@@ -76,8 +76,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final double HEARING_RANGE_SQUARED = HEARING_RANGE * HEARING_RANGE;
 	/** 振动监听半径取整：与音效兜底共用 20 格。 */
 	private static final int HEARING_RANGE_BLOCKS = (int) HEARING_RANGE;
-	/** 阶段 1 的追击上限：目标跑出 24 格就放弃。 */
-	private static final double MAX_CHASE_RANGE = 24.0D;
+	/** 阶段 1 的追击上限：目标跑出 24 格就放弃（值来自 {@link CombatProfile#PHASE_1_GIVE_UP_RANGE}）。 */
+	private static final double MAX_CHASE_RANGE = CombatProfile.PHASE_1_GIVE_UP_RANGE;
 	private static final double MAX_CHASE_RANGE_SQUARED = MAX_CHASE_RANGE * MAX_CHASE_RANGE;
 	/** 脚步 / 落地 / 受击的限频窗口：每类每 5 秒最多算一次真噪音。 */
 	private static final int MINOR_NOISE_COOLDOWN_TICKS = 100;
@@ -101,8 +101,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	private static final int CURIOUS_DURATION_TICKS = 40;
 	/** 音效补充与 GameEvent 的配对窗口：同一次动作的音效和事件间隔不超过 2 tick。 */
 	private static final int SUPPLEMENT_PAIR_TICKS = 2;
-	/** 吐口水冷却：羊驼默认 40 tick，这里减 0.3 秒 = 34 tick。 */
-	private static final int SPIT_COOLDOWN_TICKS = 34;
 	/**
 	 * 诊断日志开关：默认关闭，避免正式包刷日志；排查时用系统属性
 	 * {@code -Dhush.debug=true} 打开（实例化前设置，全局生效）。
@@ -117,10 +115,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			com.example.hush.Hush.LOGGER.info("[Yao#{}] " + message, full);
 		}
 	}
-	/** 挨打后的反击上限：每次被打最多还手 3 次，打完就收手。 */
-	private static final int REVENGE_SHOT_LIMIT = 3;
-	/** 反击超时：5 秒内一次都没打出去（追不到 / 目标无敌）就放弃。 */
-	private static final int REVENGE_TIMEOUT_TICKS = 100;
 	/** 所有阶段的近战接管距离都是 5 格（阶段 1 也放宽到 5 格）。 */
 	private static final double MELEE_RANGE_SQUARED = CombatProfile.MELEE_RANGE * CombatProfile.MELEE_RANGE;
 	/**
@@ -133,14 +127,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** 原版监守者开炮前蓄力 34 tick、两发间隔 160 tick，见 {@link SonicCycle}。 */
 	/** Boss 掉落经验：普通生物 1~3 点，boss 一次给 500 点。 */
 	private static final int BOSS_XP_REWARD = 500;
-	/** 脱战回血：玩家连续 10 秒（200 tick）没造成伤害，且未满血时挂生命恢复 I。 */
-	private static final int OUT_OF_COMBAT_REGEN_TICKS = 200;
-	private static final int OUT_OF_COMBAT_REGEN_AMPLIFIER = 0;
-	/** 退回普通形态：解除锁定后连续 30 秒（600 tick）没有目标才触发。 */
-	private static final int BOSS_FORM_REVERT_TICKS = 600;
-	/** 阶段 4 额外增益：跌破 30% 触发，持续 3 分钟，冷却 1 分钟，可重复触发。 */
-	private static final int PHASE_4_BUFF_TICKS = 3600;
-	private static final int PHASE_4_BUFF_COOLDOWN_TICKS = 1200;
 	/** 空闲游走：始终保持与玩家至少 16 格；32 格内站定注视，>32 格靠近，>48 格传送，落点约 20 格。 */
 	private static final double IDLE_LOOK_RANGE_SQUARED = 20.0D * 20.0D;
 	private static final double IDLE_KEEP_DISTANCE = 16.0D;
@@ -323,7 +309,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		if (now < this.nextPhase4BuffTick) {
 			return;
 		}
-		this.nextPhase4BuffTick = now + PHASE_4_BUFF_COOLDOWN_TICKS;
+		this.nextPhase4BuffTick = now + CombatProfile.PHASE_4_BUFF_COOLDOWN_TICKS;
 		this.applyPhase4Buffs();
 		EntityParticles.phase4(this);
 		debug("PHASE4 buff hp={}", this.getHealth());
@@ -374,7 +360,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			this.noTargetTicks = 0;
 			return;
 		}
-		if (++this.noTargetTicks >= BOSS_FORM_REVERT_TICKS) {
+		if (++this.noTargetTicks >= CombatProfile.BOSS_FORM_REVERT_TICKS) {
 			this.exitBossForm();
 		}
 	}
@@ -388,7 +374,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 			this.clearOutOfCombatRegen();
 			return;
 		}
-		boolean idle = now - this.lastPlayerDamageTick >= OUT_OF_COMBAT_REGEN_TICKS;
+		boolean idle = now - this.lastPlayerDamageTick >= CombatProfile.OUT_OF_COMBAT_REGEN_TICKS;
 		boolean need = idle && this.getHealth() < this.getMaxHealth();
 		if (!need) {
 			this.clearOutOfCombatRegen();
@@ -397,10 +383,10 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		StatusEffectInstance current = this.getStatusEffect(StatusEffects.REGENERATION);
 		if (current == null) {
 			this.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION,
-					StatusEffectInstance.INFINITE, OUT_OF_COMBAT_REGEN_AMPLIFIER, false, false, true));
+					StatusEffectInstance.INFINITE, CombatProfile.OUT_OF_COMBAT_REGEN_AMPLIFIER, false, false, true));
 			this.outOfCombatRegen = true;
 			debug("REGEN on hp={}", this.getHealth());
-		} else if (current.getAmplifier() == OUT_OF_COMBAT_REGEN_AMPLIFIER
+		} else if (current.getAmplifier() == CombatProfile.OUT_OF_COMBAT_REGEN_AMPLIFIER
 				&& current.getDuration() == StatusEffectInstance.INFINITE) {
 			// 读档后补认自己挂的效果，满血/挨打时才能清掉
 			this.outOfCombatRegen = true;
@@ -413,7 +399,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		}
 		this.outOfCombatRegen = false;
 		StatusEffectInstance current = this.getStatusEffect(StatusEffects.REGENERATION);
-		if (current != null && current.getAmplifier() == OUT_OF_COMBAT_REGEN_AMPLIFIER
+		if (current != null && current.getAmplifier() == CombatProfile.OUT_OF_COMBAT_REGEN_AMPLIFIER
 				&& current.getDuration() == StatusEffectInstance.INFINITE) {
 			this.removeStatusEffect(StatusEffects.REGENERATION);
 			debug("REGEN off hp={}", this.getHealth());
@@ -474,15 +460,15 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 
 	/** 阶段 4 额外增益：抗性提升 I、生命恢复 II、速度 I、力量 I、伤害吸收 I，各 3 分钟。 */
 	private void applyPhase4Buffs() {
-		this.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, PHASE_4_BUFF_TICKS, 0,
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, CombatProfile.PHASE_4_BUFF_TICKS, 0,
 				false, true, true));
-		this.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, PHASE_4_BUFF_TICKS, 1,
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, CombatProfile.PHASE_4_BUFF_TICKS, 1,
 				false, true, true));
-		this.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, PHASE_4_BUFF_TICKS, 0,
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, CombatProfile.PHASE_4_BUFF_TICKS, 0,
 				false, true, true));
-		this.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, PHASE_4_BUFF_TICKS, 0,
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.STRENGTH, CombatProfile.PHASE_4_BUFF_TICKS, 0,
 				false, true, true));
-		this.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, PHASE_4_BUFF_TICKS, 0,
+		this.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, CombatProfile.PHASE_4_BUFF_TICKS, 0,
 				false, true, true));
 	}
 
@@ -588,14 +574,14 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 				this.bossSonicCycle.reset();
 				if (now >= this.nextSpitTick) {
 					this.shootAt(target, 1.0F);
-					this.nextSpitTick = now + SPIT_COOLDOWN_TICKS;
+					this.nextSpitTick = now + CombatProfile.SPIT_COOLDOWN_TICKS;
 				}
 			}
 			case RANDOM -> {
 				// 阶段 4 的 17~24 格：口水/声波 3:1，均带击退
 				this.bossSonicCycle.reset();
 				if (now >= this.nextSpitTick) {
-					this.nextSpitTick = now + SPIT_COOLDOWN_TICKS;
+					this.nextSpitTick = now + CombatProfile.SPIT_COOLDOWN_TICKS;
 					if (this.random.nextFloat() < CombatProfile.RANDOM_SPIT_CHANCE) {
 						this.shootSpit(target, CombatProfile.RANDOM_SPIT_DAMAGE, 0.0F, this.spitKnockback());
 					} else {
@@ -891,7 +877,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		this.previousHealthRatio = this.getHealth() / this.getMaxHealth();
 		// 认回读档前挂上的脱战恢复 I，满血/挨打时才能清掉
 		StatusEffectInstance regen = this.getStatusEffect(StatusEffects.REGENERATION);
-		this.outOfCombatRegen = regen != null && regen.getAmplifier() == OUT_OF_COMBAT_REGEN_AMPLIFIER
+		this.outOfCombatRegen = regen != null && regen.getAmplifier() == CombatProfile.OUT_OF_COMBAT_REGEN_AMPLIFIER
 				&& regen.getDuration() == StatusEffectInstance.INFINITE;
 		// 速度等级由 updateMovementSpeed 每 tick 按状态重算，读档后置空等它接管
 		this.speedLevel = -1;
@@ -1440,7 +1426,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		// 被打时能贴脸还手；目标一退出去就立刻把控制权还给远程
 		this.goalSelector.add(2, new CloseMeleeGoal(this, 1.2, true));
 		// 远程：阶段 1 由原版 Goal 控制走位/口水；Boss 阶段的走位/攻击由 updateBossCombat 接管
-		this.goalSelector.add(3, new LockAwareProjectileAttackGoal(this, 1.25D, SPIT_COOLDOWN_TICKS,
+		this.goalSelector.add(3, new LockAwareProjectileAttackGoal(this, 1.25D, CombatProfile.SPIT_COOLDOWN_TICKS,
 				(float) CombatProfile.spitRange(1)));
 		this.goalSelector.add(6, new IdleWanderGoal(this, 1.0D));
 		this.goalSelector.add(7, new CalmLookAtEntityGoal(this));
@@ -1520,7 +1506,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 				&& this.getVisibilityCache().canSee(target)) {
 			this.shootAt(target, 1.0F);
 			// 记一次冷却，避免下一 tick 又补一口
-			this.nextSpitTick = now + SPIT_COOLDOWN_TICKS;
+			this.nextSpitTick = now + CombatProfile.SPIT_COOLDOWN_TICKS;
 		}
 	}
 
@@ -1572,8 +1558,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		// 挨打引发的仇恨交给原版反击逻辑处理，不再受"安静就停火"的约束；
 		// 但反击有上限：每次挨打最多还手 3 次，打完就收手
 		this.revengeMode = true;
-		this.revengeShots = REVENGE_SHOT_LIMIT;
-		this.revengeDeadline = this.getWorld().getTime() + REVENGE_TIMEOUT_TICKS;
+		this.revengeShots = CombatProfile.REVENGE_SHOT_LIMIT;
+		this.revengeDeadline = this.getWorld().getTime() + CombatProfile.REVENGE_TIMEOUT_TICKS;
 		this.setTarget(living);
 		return damaged;
 	}
@@ -1635,7 +1621,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 		if (!this.revengeMode) {
 			return;
 		}
-		this.revengeDeadline = this.getWorld().getTime() + REVENGE_TIMEOUT_TICKS;
+		this.revengeDeadline = this.getWorld().getTime() + CombatProfile.REVENGE_TIMEOUT_TICKS;
 		if (--this.revengeShots <= 0) {
 			this.revengeMode = false;
 			// 连"上次攻击者"一起忘掉，避免任何原版逻辑把它重新锁回来
