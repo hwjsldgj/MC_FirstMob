@@ -30,6 +30,8 @@ public final class CombatProfile {
 	/** 所有阶段的护甲韧性都是 0。 */
 	public static final double ARMOR_TOUGHNESS = 0.0D;
 
+	/** 阶段 1 脱锁距离：目标跑出 24 格就放弃。 */
+	public static final double PHASE_1_GIVE_UP_RANGE = 24.0D;
 	/** 阶段 2 超过 32 格脱锁；阶段 3/4 永不脱锁。 */
 	private static final double PHASE_2_GIVE_UP_RANGE = 32.0D;
 	/** 阶段 4 超过 64 格只追不打。 */
@@ -62,6 +64,20 @@ public final class CombatProfile {
 	private static final double[] SONIC_MAX_RANGE = { 24.0D, 32.0D, 48.0D, 64.0D };
 	/** 追到多远停下：8 / 16 / 16 / 32。 */
 	private static final double[] CHASE_STOP_RANGE = { 8.0D, 16.0D, 16.0D, 32.0D };
+
+	/** 吐口水冷却：羊驼默认 40 tick，这里减 0.3 秒 = 34 tick。 */
+	public static final int SPIT_COOLDOWN_TICKS = 34;
+	/** 挨打反击：每次被打最多还手 3 次，5 秒（100 tick）内没打出去就放弃。 */
+	public static final int REVENGE_SHOT_LIMIT = 3;
+	public static final int REVENGE_TIMEOUT_TICKS = 100;
+	/** 脱战回血：玩家连续 10 秒（200 tick）没造成伤害，且未满血时挂生命恢复 I。 */
+	public static final int OUT_OF_COMBAT_REGEN_TICKS = 200;
+	public static final int OUT_OF_COMBAT_REGEN_AMPLIFIER = 0;
+	/** 退回普通形态：解除锁定后连续 30 秒（600 tick）没有目标才触发。 */
+	public static final int BOSS_FORM_REVERT_TICKS = 600;
+	/** 阶段 4 额外增益：跌破 30% 触发，持续 3 分钟，冷却 1 分钟，可重复触发。 */
+	public static final int PHASE_4_BUFF_TICKS = 3600;
+	public static final int PHASE_4_BUFF_COOLDOWN_TICKS = 1200;
 
 	private CombatProfile() {
 	}
@@ -140,9 +156,12 @@ public final class CombatProfile {
 		return CHASE_STOP_RANGE[index(phase)];
 	}
 
-	/** 脱锁距离：阶段 2 为 32 格，阶段 3/4 永不脱锁（返回 {@link Double#MAX_VALUE}）。 */
+	/** 脱锁距离：阶段 1 为 24 格，阶段 2 为 32 格，阶段 3/4 永不脱锁（返回 {@link Double#MAX_VALUE}）。 */
 	public static double giveUpRange(int phase) {
-		return phase >= 3 ? Double.MAX_VALUE : PHASE_2_GIVE_UP_RANGE;
+		if (phase <= 1) {
+			return PHASE_1_GIVE_UP_RANGE;
+		}
+		return phase == 2 ? PHASE_2_GIVE_UP_RANGE : Double.MAX_VALUE;
 	}
 
 	/** 阶段 4 的 17~24 格随机档：只有阶段 4 且落在区间内才成立。 */

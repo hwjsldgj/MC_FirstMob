@@ -72,9 +72,9 @@ class CombatProfileTest {
 	}
 
 	@Test
-	@DisplayName("脱锁：阶段 2 为 32 格，阶段 3/4 永不脱锁")
+	@DisplayName("脱锁：阶段 1 为 24 格、阶段 2 为 32 格，阶段 3/4 永不脱锁")
 	void giveUpRange() {
-		assertEquals(32.0D, CombatProfile.giveUpRange(1), EPSILON);
+		assertEquals(24.0D, CombatProfile.giveUpRange(1), EPSILON);
 		assertEquals(32.0D, CombatProfile.giveUpRange(2), EPSILON);
 		assertEquals(Double.MAX_VALUE, CombatProfile.giveUpRange(3), EPSILON);
 		assertEquals(Double.MAX_VALUE, CombatProfile.giveUpRange(4), EPSILON);
@@ -107,6 +107,18 @@ class CombatProfileTest {
 			previousMelee = CombatProfile.meleeDamage(phase);
 			previousSonic = CombatProfile.sonicDamage(phase);
 		}
+	}
+
+	@Test
+	@DisplayName("战斗节奏常量：口水 34 tick，脱战回血 200 tick，退回 600 tick，阶段 4 增益 3600/1200")
+	void timingConstants() {
+		assertEquals(34, CombatProfile.SPIT_COOLDOWN_TICKS);
+		assertEquals(200, CombatProfile.OUT_OF_COMBAT_REGEN_TICKS);
+		assertEquals(600, CombatProfile.BOSS_FORM_REVERT_TICKS);
+		assertEquals(3600, CombatProfile.PHASE_4_BUFF_TICKS);
+		assertEquals(1200, CombatProfile.PHASE_4_BUFF_COOLDOWN_TICKS);
+		assertEquals(3, CombatProfile.REVENGE_SHOT_LIMIT);
+		assertEquals(100, CombatProfile.REVENGE_TIMEOUT_TICKS);
 	}
 
 	private static void assertTable(double[] expected, java.util.function.IntToDoubleFunction actual) {
