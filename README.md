@@ -9,7 +9,7 @@ Minecraft **1.21.1 Fabric** 模组：新增生物「姚永寿」。
 
 | 项目 | 要求 | 说明 |
 | --- | --- | --- |
-| Minecraft | **1.21.1**（元数据 `~1.21.1`） | 只在 1.21.1 开发与验证；`~` 语义上 1.21.2~1.21.4 也会被接受，装上去可能启动即崩 |
+| Minecraft | **1.21.1**（元数据 `>=1.21.1 <1.21.2`） | 只在 1.21.1 开发与验证；1.21.2 起会被元数据拒绝加载，不会装上去才崩 |
 | Fabric Loader | **≥ 0.20.1** | 低于此版本会被拒绝加载 |
 | Fabric API | **≥ 0.116.17**（开发/测试用 `0.116.17+1.21.1`） | 必须安装 |
 | Java | **≥ 21** | |
@@ -146,7 +146,7 @@ docs/                               # SPEC / API / 文档索引
 - 部分穿甲依赖对 `LivingEntity#applyArmorToDamage` 的 Mixin，可能与重定向该方法的模组冲突。
 - 听觉只统计玩家，且仅阶段 1 生效。
 - 改名后旧存档中的 `firstmob:` 实体不再注册。
-- 版本区间比实际验证范围宽：`minecraft` 写的是 `~1.21.1`（接受整个 1.21.x），`fabric-api` 只有下界，两个 Mixin 都是 `required: true`；装到未验证版本会在启动时抛 `InvalidMixinException`。
+- 版本下限按验证范围写死：元数据 `minecraft` 为 `>=1.21.1 <1.21.2`；两个 Mixin 都是 `required: true`，装到未验证版本会在启动时抛 `InvalidMixinException`。
 - 客户端外观全部复用原版资源：`textures/entity/zombie/zombie.png`、`EntityModelLayers.ZOMBIE`、`minecraft:entity.llama.*` / `warden.*` 音效事件。原版一改名就是粉黑格或无声，CI 查不出来。
 - 自动化只到服务端：假玩家断言里会切生存挨一发口水，证明「命中且掉血」；具体伤害与穿甲数值、血条/音效/粒子仍需手工或客户端。
 - 注视判定只看距离与夹角，不做遮挡：隔墙看也会让它停下；每 tick 遍历全服玩家，人数多时开销线性增长。

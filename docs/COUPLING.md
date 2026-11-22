@@ -49,7 +49,7 @@
 | `playSound(Lnet/minecraft/sound/SoundEvent;FF)V` 描述符变化 | 同上 | 编译期失败（`@Inject` 找不到方法） |
 | `LlamaEntity` 行为调整（商队、繁殖、骑乘） | 版本升级 | 已 `goalSelector.clear` + 覆写年龄/繁殖接口，回归面收敛在 `YaoYongshouEntity` 末尾 |
 | `Vibrations` 接口调整 | 版本升级 | 仅 `YaoVibrationCallback` 一处实现 |
-| 版本区间写 `~1.21.1`（语义上接受 1.21.x），`fabric-api` 无上界 | 玩家装到 1.21.2~1.21.4 | 未缓解：Mixin 以字符串描述符绑定且 `required: true`，未验证版本会在启动时崩；CI 只跑 1.21.1 |
+| 版本区间只写验证范围（`minecraft >=1.21.1 <1.21.2`），`fabric-api` 无上界 | 玩家装到 1.21.2+ 时会被拒载 | 已缓解：加载期直接拒绝，不会装上去才崩；`fabric-api` 仍靠下界 |
 | 客户端资源复用原版（zombie 贴图、`EntityModelLayers.ZOMBIE`、llama/warden 音效事件） | 原版改名或改路径 | 未缓解：资源校验只查 JSON 语法与语言键，不查原版资源存在性；失效表现为粉黑格/无声 |
 | `applyArmorToDamage` 全局注入 | 与其他修改护甲或包装 `DamageSource` 的模组共存 | 未缓解：无兼容性测试；叠加顺序与双重扣加只在运行期体现，不报错只算错 |
 
