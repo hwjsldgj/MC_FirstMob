@@ -159,6 +159,28 @@ class Smoke:
         self.check("gaze control (unwatched: branch skipped)",
                    "GAZE freeze" not in self.log_since(offset), "no GAZE freeze while looking away")
 
+        # 遮挡：墙后注视不算（SPEC §4.5）；拆墙后要恢复
+        self.command("fill -1 -60 5 2 -55 5 stone")
+        self.command(f"player {PLAYER} look at 0.5 {SURFACE_Y + 1.5} 0.5")
+        time.sleep(3)
+        offset = self.log_size()
+        time.sleep(3)
+        self.check("gaze occlusion (wall blocks sight)",
+                   "GAZE freeze" not in self.log_since(offset), "no GAZE freeze through a wall")
+
+        self.command("fill -1 -60 5 2 -55 5 air")
+        pos = self.entity_pos()
+        if pos is None:
+            self.check("gaze occlusion (wall removed: freeze resumes)", False,
+                       "entity position unreadable")
+        else:
+            self.command(f"player {PLAYER} look at {pos[0]:.1f} {pos[1] + 1.4:.2f} {pos[2]:.1f}")
+            time.sleep(3)
+            offset = self.log_size()
+            time.sleep(3)
+            self.check("gaze occlusion (wall removed: freeze resumes)",
+                       "GAZE freeze" in self.log_since(offset), "GAZE freeze resumes after wall removed")
+
     def moved_for(self, seconds: float) -> float:
         before = self.entity_pos()
         time.sleep(seconds)
