@@ -128,7 +128,7 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 16. **掉落经验固定 500**：`getXpToDrop` 直接返回 `BOSS_XP_REWARD`，非 Boss 形态也一样；要改先改 SPEC 与 README。
 17. **注视判定不做遮挡**：`isWatchedByPlayer` 每 tick 遍历全服玩家，只看距离与夹角，隔墙也算注视；加遮挡检测前先评估开销。
 18. **冒烟只证明口水能命中**：假玩家切生存、站在口水档，断言血量下降；具体伤害与穿甲数值受上限/抗性/击退影响，CI 上不稳定，仍要手工验。
-19. **版本区间与 Mixin 绑定**：`fabric.mod.json` 写 `~1.21.1`（接受 1.21.x），Mixin 为字符串描述符且 `required: true`；未验证版本会启动崩溃，不要用「应该兼容」往宽了写。
+19. **版本区间与 Mixin 绑定**：`fabric.mod.json` 写 `>=1.21.1 <1.21.2`（只在 1.21.1 验证过），Mixin 为字符串描述符且 `required: true`；未验证版本会在加载期被拒，不要用「应该兼容」往宽了写。
 
 ## 验证流程
 

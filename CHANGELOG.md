@@ -10,6 +10,7 @@
 
 ### 工程
 
+- `fabric.mod.json` 的 `minecraft` 依赖由 `~1.21.1` 收紧为 `>=1.21.1 <1.21.2`：只在 1.21.1 验证过，1.21.2+ 会在加载阶段被拒绝，而不是装上去才发现 Mixin 崩
 - 构建不再写死 JDK 路径：`gradle.properties` 移除 `org.gradle.java.home`，本地与 CI 统一用 `JAVA_HOME` 选择 JDK 21
 - 阶段数值集中到 `com.example.hush.combat.CombatProfile`，实体与 `ModEntities` 改为查表；新增 JUnit 5 单测（`CombatProfileTest`，9 条）
 - 诊断日志默认关闭，排查时用 `-Dhush.debug=true` 打开
