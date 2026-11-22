@@ -118,15 +118,27 @@ src/main/java/com/example/hush
 ├── entity
 │   ├── YaoYongshouEntity.java       # 羊驼行为 + 四阶段战斗 + 听觉 + 声波
 │   ├── YaoYongshouSpitEntity.java   # 口水弹体：伤害 / 穿甲 / 击退
-│   └── YaoArmorPiercingDamageSource.java  # 部分无视护甲的伤害源
+│   ├── YaoArmorPiercingDamageSource.java  # 部分无视护甲的伤害源
+│   ├── TeleportSearch.java          # 传送落点搜索（角度扇区 + 落地检查）
+│   └── goal                         # 6 个 AI 目标：近战、锁定射击、游走、张望、好奇
+├── combat
+│   ├── CombatProfile.java           # 四阶段纯数值表（阈值 / 护甲 / 伤害 / 距离 / 节奏）
+│   ├── AttackBand.java              # 距离 → 攻击档
+│   ├── SonicCycle.java              # 声波蓄力 / 间隔节拍
+│   └── GazeWatch.java               # 注视判定
+├── hearing
+│   └── AngerLedger.java             # 愤怒累积、限频、配对窗口
+├── visual
+│   ├── BossBarView.java             # Boss 血条：追踪 / 节流 / 狂暴配色
+│   └── EntityParticles.java         # 粒子表现
 ├── mixin
 │   ├── PlayerSoundMixin.java        # 补未记录音效
 │   └── LivingEntityArmorMixin.java  # 部分穿甲结算
-├── combat
-│   └── CombatProfile.java           # 四阶段纯数值表（阈值 / 护甲 / 伤害 / 距离 / 节奏）
 └── registry                         # 实体类型、刷怪蛋、音效事件
 
-src/test/java/com/example/hush/combat # JUnit 单测：阶段表与距离档
+src/test/java/com/example/hush       # JUnit 5：37 条 / 5 个类
+├── combat（CombatProfile / AttackBand / SonicCycle / GazeWatch）
+└── hearing（AngerLedger）
 
 src/client/java/com/example/hush/client
 ├── HushClient.java                  # 客户端入口
@@ -135,7 +147,7 @@ src/client/java/com/example/hush/client
 
 src/main/resources                  # 贴图、模型、语言、sounds.json、伤害类型
 docs/                               # SPEC / API / 文档索引
-.github/workflows/build.yml         # CI：PR 与 main 推送跑 build（含单测）
+.github/workflows/build.yml         # CI：build（单测 + 资源校验）与 smoke（假玩家 15 项）
 ```
 
 ## 已知限制
