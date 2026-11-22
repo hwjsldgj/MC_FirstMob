@@ -123,7 +123,7 @@ src/main/java/com/example/hush
 │   ├── PlayerSoundMixin.java        # 补未记录音效
 │   └── LivingEntityArmorMixin.java  # 部分穿甲结算
 ├── combat
-│   └── CombatProfile.java           # 四阶段纯数值表（阈值 / 护甲 / 伤害 / 距离）
+│   └── CombatProfile.java           # 四阶段纯数值表（阈值 / 护甲 / 伤害 / 距离 / 节奏）
 └── registry                         # 实体类型、刷怪蛋、音效事件
 
 src/test/java/com/example/hush/combat # JUnit 单测：阶段表与距离档

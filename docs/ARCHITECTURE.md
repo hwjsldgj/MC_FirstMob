@@ -15,7 +15,7 @@
 com.example.hush
 ├── Hush                     入口：注册三件套 + 创造栏
 ├── combat/                  纯数值与纯几何
-│   ├── CombatProfile        阶段表（伤害/护甲/距离）
+│   ├── CombatProfile        阶段表（阈值/护甲/伤害/距离/节奏）
 │   ├── GazeWatch            「玩家是否注视目标」的角度/距离判定
 │   ├── SonicCycle           声波蓄力/间隔节拍（Boss 与阶段 1 各一个实例）
 │   └── AttackBand           距离 → 攻击档（近战/口水/随机/声波/只追）
@@ -56,7 +56,7 @@ com.example.hush
 | 四 | Boss 血条抽成 `visual/BossBarView`（追踪/隐藏/刷新归它管） | 已完成 | `build` 通过；36 项单测；实体再减约 25 行 |
 | 五 | 换基类（`LlamaEntity` → `PathAwareEntity`） | 未开始 | 需要游戏内存档兼容验证，不在地面改 |
 | 六 | 口水去掉 `LlamaSpitEntity` 继承，抄写原版弹道与渲染 | 未开始 | 需要游戏内验证弹道与命中，先注册自有类型（已完成） |
-| 七 | 剩余硬编码数值并入 `CombatProfile` | 未开始 | 数值表与 SPEC 同步 |
+| 七 | 战斗相关硬编码数值并入 `CombatProfile` | 已完成 | 单测 37 条；听觉/空闲/传送常数属于各自域，保留在实体 |
 
 ## 5. 不做的事
 
@@ -68,7 +68,7 @@ com.example.hush
 
 | 层 | 自动覆盖 | 覆盖不到 |
 | --- | --- | --- |
-| JUnit（36 条） | `CombatProfile` 9、`AngerLedger` 12、`GazeWatch` 5、`SonicCycle` 5、`AttackBand` 5 | 任何 Minecraft 类型 |
+| JUnit（37 条） | `CombatProfile` 10、`AngerLedger` 12、`GazeWatch` 5、`SonicCycle` 5、`AttackBand` 5 | 任何 Minecraft 类型 |
 | `smoke` 数据包 | 启动、Mixin 应用、实体注册、summon、口水实体 | 客户端 |
 | `smoke` 假玩家（14 项） | 注视冻结日志与背对对照、注视静止、Boss 形态、阶段 2/3/4 护甲与体型、阶段 4 增益、开火日志、脱战回血 | 命中与伤害数值、穿甲结算、血条/音效/粒子 |
 
