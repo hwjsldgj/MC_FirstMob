@@ -201,7 +201,7 @@ jobs:
           test -f "$REPORT" || fail "fake player report missing"
           ! grep -q '^- FAIL' "$REPORT" || fail "fake player assertions failed"
           pass=$(grep -c '^- PASS' "$REPORT" || true)
-          test "$pass" -ge 10 || fail "only $pass assertions passed"
+          test "$pass" -ge 15 || fail "only $pass assertions passed (expected 15)"
           echo "fake player assertions passed: $pass"
 
       - name: Upload server log
