@@ -148,7 +148,7 @@ docs/                               # SPEC / API / 文档索引
 - 改名后旧存档中的 `firstmob:` 实体不再注册。
 - 版本区间比实际验证范围宽：`minecraft` 写的是 `~1.21.1`（接受整个 1.21.x），`fabric-api` 只有下界，两个 Mixin 都是 `required: true`；装到未验证版本会在启动时抛 `InvalidMixinException`。
 - 客户端外观全部复用原版资源：`textures/entity/zombie/zombie.png`、`EntityModelLayers.ZOMBIE`、`minecraft:entity.llama.*` / `warden.*` 音效事件。原版一改名就是粉黑格或无声，CI 查不出来。
-- 自动化只到服务端：假玩家断言能证明「开火了」，不证明命中与伤害数值；穿甲链路（`YaoArmorPiercingDamageSource` + `LivingEntityArmorMixin`）在冒烟里不会被触发（假玩家创造模式 + 抗性，不吃伤害）。
+- 自动化只到服务端：假玩家断言里会切生存、穿 20 护甲挨一发阶段 4 口水，验证「命中 + 穿甲 ≈4.4」；更远的血条/音效/粒子仍需要客户端。
 - 注视判定只看距离与夹角，不做遮挡：隔墙看也会让它停下；每 tick 遍历全服玩家，人数多时开销线性增长。
 - 击杀掉落固定 **500 点**经验，非 Boss 形态也一样。
 

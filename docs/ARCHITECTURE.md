@@ -70,6 +70,6 @@ com.example.hush
 | --- | --- | --- |
 | JUnit（37 条） | `CombatProfile` 10、`AngerLedger` 12、`GazeWatch` 5、`SonicCycle` 5、`AttackBand` 5 | 任何 Minecraft 类型 |
 | `smoke` 数据包 | 启动、Mixin 应用、实体注册、summon、口水实体 | 客户端 |
-| `smoke` 假玩家（14 项） | 注视冻结日志与背对对照、注视静止、Boss 形态、阶段 2/3/4 护甲与体型、阶段 4 增益、开火日志、脱战回血 | 命中与伤害数值、穿甲结算、血条/音效/粒子 |
+| `smoke` 假玩家（16 项） | 注视冻结日志与背对对照、注视静止、Boss 形态、阶段 2/3/4 护甲与体型、阶段 4 增益、开火日志、单发命中与穿甲（生存 + 20 护甲）、脱战回血 | 血条/音效/粒子；近战与声波的穿甲 |
 
-当前 `YaoYongshouEntity` 1680 行。穿甲链路（`YaoArmorPiercingDamageSource` + `LivingEntityArmorMixin`）没有自动断言——假玩家是创造模式且带抗性，不吃伤害；改动后必须进游戏手工验。
+当前 `YaoYongshouEntity` 1680 行。穿甲链路已有单发口水断言（生存玩家穿 20 护甲，掉血 ≥ 3；无穿甲只会掉 1.2 左右），但近战与声波的穿甲仍未自动覆盖。
