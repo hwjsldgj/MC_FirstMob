@@ -129,6 +129,7 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 17. **注视遮挡按碰撞箱算**：`isWatchedByPlayer` 每 5 tick 用 `RaycastContext.ShapeType.COLLIDER` 射线一次，玻璃、树叶也会挡住；别改成每 tick 射线，也别改成只看距离与夹角。
 18. **冒烟只证明口水能命中**：假玩家切生存、站在口水档，断言血量下降；具体伤害与穿甲数值受上限/抗性/击退影响，CI 上不稳定，仍要手工验。
 19. **版本区间与 Mixin 绑定**：`fabric.mod.json` 写 `>=1.21.1 <1.21.2`（只在 1.21.1 验证过），Mixin 为字符串描述符且 `required: true`；未验证版本会在加载期被拒，不要用「应该兼容」往宽了写。
+20. **冒烟世界必须是超平坦**：注视遮挡断言依赖 0,0 附近是空气；`run/server.properties` 不写 `level-type=minecraft:flat` 时玩家会埋在默认地形里，射线永远被挡、`GAZE` 不触发。CI 与本地要写同一份。
 
 ## 验证流程
 
