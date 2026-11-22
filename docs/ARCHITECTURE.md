@@ -63,3 +63,13 @@ com.example.hush
 - 不为拆分而拆分：小于 40 行、只有一个调用点的逻辑不独立成类。
 - 不改变可见行为：拆分前后伤害、阶段阈值、音效次数、粒子数量必须一致。
 - 不顺手改数值：数值变更走 SPEC 流程，单独提交。
+
+## 6. 测试覆盖与边界
+
+| 层 | 自动覆盖 | 覆盖不到 |
+| --- | --- | --- |
+| JUnit（36 条） | `CombatProfile` 9、`AngerLedger` 12、`GazeWatch` 5、`SonicCycle` 5、`AttackBand` 5 | 任何 Minecraft 类型 |
+| `smoke` 数据包 | 启动、Mixin 应用、实体注册、summon、口水实体 | 客户端 |
+| `smoke` 假玩家（12 项） | 注视静止、Boss 形态、阶段 2/3/4 护甲与体型、阶段 4 增益、开火日志、脱战回血 | 命中与伤害数值、穿甲结算、血条/音效/粒子 |
+
+当前 `YaoYongshouEntity` 1680 行。穿甲链路（`YaoArmorPiercingDamageSource` + `LivingEntityArmorMixin`）没有自动断言——假玩家是创造模式且带抗性，不吃伤害；改动后必须进游戏手工验。

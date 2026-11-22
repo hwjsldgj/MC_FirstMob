@@ -35,6 +35,7 @@
 - 拆分第三步：BOSS 阶段的「距离 → 攻击档」抽成 `combat/AttackBand`（`MELEE` / `SPIT` / `RANDOM` / `SONIC` / `CHASE_ONLY`），实体只负责执行；`CombatProfile` 补 `MELEE_RANGE = 5`，删掉四个只给这条分支用的距离换算方法；实体再减约 30 行；新增 `AttackBandTest`（5 例），单测总数 36
 - 拆分第四步：Boss 血条抽成 `visual/BossBarView`（追踪/隐藏/清空、10 tick 节流、阶段 4 紫色「（狂暴）」），实体只传「是否显示 / 血量比例 / 阶段」；实体再减约 25 行，行为不变；单测仍 36 条（纯表现类，无新增可测逻辑）
 - 冒烟测试升级：用 Carpet（`ci/fetch_carpet.py` 从 Modrinth 拉 1.21.1 构建，仅测试环境）的 `/player` 造真玩家，`ci/fake_player_smoke.py` 逐项断言注视静止、Boss 形态、阶段 2/3/4 的护甲与体型、阶段 4 增益、吐口水、脱战回血；13 项断言全过；报告 `build/smoke-report.txt`（含 `[Hush]` 调试行与命令回放）作为 artifact；`HUSH_DEBUG=1` 让 `build.gradle` 给服务端 JVM 传 `-Dhush.debug=true`；新增 `ci/rcon.py`、`ci/rcon_cmd.py`（支持 `--file` 批量命令）
+- 同步文档：单测 36 条 / 5 个类、假玩家冒烟 12 项断言；README、API、COUPLING、ARCHITECTURE 补齐版本区间、客户端资源复用、穿甲无自动覆盖等边界
 
 ### 文档
 

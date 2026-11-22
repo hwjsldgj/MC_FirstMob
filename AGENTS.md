@@ -27,7 +27,7 @@ Minecraft **1.21.1 Fabric** 模组「肃静」（`hush`），新增生物「姚�
 $env:JAVA_HOME='D:\pcl\jdk-21'
 $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 .\gradlew.bat build     # 产物 build/libs/hush-0.1.0-SNAPSHOT.jar
-.\gradlew.bat test      # 纯逻辑单测 26 条（CombatProfileTest / AngerLedgerTest / GazeWatchTest），不需要进入游戏
+.\gradlew.bat test      # 纯逻辑单测 .\gradlew.bat test      # 纯逻辑单测 36 条 / 5 个类（CombatProfile / AngerLedger / GazeWatch / SonicCycle / AttackBand），不需要进入游戏
 .\gradlew.bat runClient # 开发客户端，日志 run/logs/latest.log
 ```
 
@@ -61,8 +61,10 @@ src/main/java/com/example/hush
     └── GazeWatch.java              # 「玩家是否注视目标」的角度/距离判定，有单测
 src/test/java/com/example/hush
 ├── combat
-│   ├── CombatProfileTest.java      # 阶段表与距离档的 JUnit 用例
-│   └── GazeWatchTest.java          # 注视判定的角度/距离边界用例
+│   ├── CombatProfileTest.java      # 阶段表与距离档的 JUnit 用例（9）
+│   ├── GazeWatchTest.java          # 注视判定的角度/距离边界用例（5）
+│   ├── SonicCycleTest.java         # 声波蓄力/间隔节拍（5）
+│   └── AttackBandTest.java         # 距离 → 攻击档查表（5）
 └── hearing
     └── AngerLedgerTest.java        # 愤怒、配对窗口、限频、衰减的 JUnit 用例
 src/client/java/com/example/hush/client
@@ -123,6 +125,10 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 13. **最大生命被羊驼随机化**：`initAttributes(Random)` 必须空实现，否则 80/60/30% 阈值全部按随机值算。
 14. **振动事件不是同一 tick 到达**：按距离延迟；音效补充靠 `accepts` 同 tick 标记 + `undoSupplementIfAny` 回滚。
 15. **阶段回退**：回血跨过阈值只降阶段与撤增益，不直接退出 Boss 形态；退出只走 600 tick 无目标。
+16. **掉落经验固定 500**：`getXpToDrop` 直接返回 `BOSS_XP_REWARD`，非 Boss 形态也一样；要改先改 SPEC 与 README。
+17. **注视判定不做遮挡**：`isWatchedByPlayer` 每 tick 遍历全服玩家，只看距离与夹角，隔墙也算注视；加遮挡检测前先评估开销。
+18. **冒烟不覆盖穿甲**：假玩家是创造模式且带抗性，`applyArmorToDamage` 不会带着穿甲源被调用；改穿甲链路必须手工进游戏验。
+19. **版本区间与 Mixin 绑定**：`fabric.mod.json` 写 `~1.21.1`（接受 1.21.x），Mixin 为字符串描述符且 `required: true`；未验证版本会启动崩溃，不要用「应该兼容」往宽了写。
 
 ## 验证流程
 
