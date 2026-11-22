@@ -222,11 +222,15 @@ class Smoke:
         self.command(f"effect clear {PLAYER}")
         self.command("gamerule naturalRegeneration false")
         self.command(f"tp {ENTITY} 0.5 {SURFACE_Y + 1} 0.5")
-        self.command(f"tp {PLAYER} 0.5 {SURFACE_Y + 1} 10.5")
-        time.sleep(0.5)
-
-        distance = self.distance_between()
-        # 6~16 是口水档；被击退后可能从 10 变成 13 左右，别卡太死
+        # 空闲且玩家在 16 格内时实体会后退/传送，站位会立刻被破坏；
+        # 用 `execute at` 把玩家放到实体旁边 10 格，并**立刻**量距离，不行就重试。
+        distance = None
+        for _ in range(6):
+            self.command(f"execute at {ENTITY} run tp {PLAYER} ~ ~ ~10.5")
+            distance = self.distance_between()
+            if distance is not None and 6.5 <= distance <= 16.5:
+                break
+            time.sleep(0.2)
         if distance is None or not 6.5 <= distance <= 16.5:
             self.check("damage setup (spit band 6~16)", False, f"distance={distance}")
             return
