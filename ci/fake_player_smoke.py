@@ -71,6 +71,11 @@ class Smoke:
         out = self.command(f"data get entity {ENTITY} {field}")
         return "1b" in out
 
+    def player_health(self) -> float:
+        out = self.command(f"data get entity {PLAYER} Health")
+        match = re.search(r"data:\s*(-?[\d.]+)", out)
+        return float(match.group(1)) if match else float("nan")
+
     def entity_pos(self):
         out = self.command(f"data get entity {ENTITY} Pos")
         numbers = re.findall(r"-?\d+\.\d+", out)
@@ -95,6 +100,7 @@ class Smoke:
             self.scenario_freeze()
             self.scenario_phases()
             self.scenario_combat()
+            self.scenario_damage()
             self.scenario_out_of_combat()
         finally:
             self.command("player Smoke stop")
@@ -183,6 +189,57 @@ class Smoke:
         self.command(f"player {PLAYER} look at 0.5 {SURFACE_Y + 1.5} 0.5")
         self.wait_for("boss spit at player", lambda: "SHOOT" in self.log_since(offset) or self.spit_spawned(),
                       timeout=40)
+
+    def scenario_damage(self) -> None:
+        """命中与穿甲：生存模式 + 20 护甲，把双方传回固定 10 格，等**单发**口水。
+
+        阶段 4 口水 6 点、其中 4 点穿甲：20 护甲下无穿甲只打 1.2，有穿甲应打 4 + 2×0.2 ≈ 4.4。
+        必须抓第一发：连续挨打会把多发的伤害加在一起，就没法区分了。
+        """
+        self.command(f"gamemode survival {PLAYER}")
+        self.command(f"effect clear {PLAYER}")
+        self.command("gamerule naturalRegeneration false")
+        self.command(f"attribute {PLAYER} minecraft:generic.max_health base set 100")
+        self.command(f"attribute {PLAYER} minecraft:generic.armor base set 20")
+        self.command(f"tp {ENTITY} 0.5 {SURFACE_Y + 1} 0.5")
+        self.command(f"tp {PLAYER} 0.5 {SURFACE_Y + 1} 10.5")
+        self.command(f"data modify entity {PLAYER} Health set value 100f")
+        time.sleep(0.5)
+
+        distance = self.distance_between()
+        # 6~16 是口水档；被击退后可能从 10 变成 13 左右，别卡太死
+        if distance is None or not 6.5 <= distance <= 16.5:
+            self.check("damage setup (spit band 6~16)", False, f"distance={distance}")
+            return
+        before = self.player_health()
+        after = before
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            time.sleep(0.1)
+            after = self.player_health()
+            if before == before and after == after and after < before - 0.05:
+                break
+        if before != before or after != after or after >= before:
+            self.check("spit hit lowers health", False, f"{before} -> {after}")
+            return
+        drop = before - after
+        self.check("spit damage lands (hit, not just fired)", drop > 0, f"-{drop:.1f} hp")
+        self.check("armor piercing applies (expect ≈4.4; without ≈1.2)", 3.0 <= drop <= 7.0,
+                   f"-{drop:.1f} hp")
+
+        # 复原，后面的脱战回血照旧用创造模式
+        self.command(f"gamemode creative {PLAYER}")
+        self.command(f"effect give {PLAYER} minecraft:resistance 600 4 true")
+        self.command("gamerule naturalRegeneration true")
+
+    def distance_between(self):
+        entity = self.entity_pos()
+        out = self.command(f"data get entity {PLAYER} Pos")
+        numbers = re.findall(r"-?\d+\.\d+", out)
+        if entity is None or len(numbers) < 3:
+            return None
+        player = tuple(float(n) for n in numbers[:3])
+        return sum((a - b) ** 2 for a, b in zip(entity, player)) ** 0.5
 
     def log_size(self) -> int:
         try:
