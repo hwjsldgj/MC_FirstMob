@@ -10,7 +10,7 @@
 
 | # | 依赖点 | 位置 | 用途 | 判断 | 决定 |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `LlamaEntity` 继承 | `YaoYongshouEntity` | 寻路、碰撞、骑乘/繁殖框架、羊驼属性表 | 必要（当前） | 保留。换基类会改存档字段与移动语义，需游戏内验证，见 `ARCHITECTURE.md` 阶段二 |
+| 1 | `LlamaEntity` 继承 | `YaoYongshouEntity` | 寻路、碰撞、骑乘/繁殖框架、羊驼属性表 | 可解除 | **已解除（阶段五）**：改为 `PathAwareEntity` + `RangedAttackMob`，属性表照抄羊驼；旧存档羊驼标签被忽略，冒烟有专项断言 |
 | 2 | `Vibrations` + `VibrationListener` + `GameEventTags.WARDEN_CAN_LISTEN` | `YaoYongshouEntity` | 监听玩家 `GameEvent`，是索敌与愤怒的主通道 | 必要 | 保留。自己实现等价于抄写监守者整套监听器，收益为负 |
 | 3 | `PlayerEntity#playSound` 注入 | `PlayerSoundMixin` | 补充原版未发 `GameEvent` 的音效（吃、喝、挖掘等） | 必要 | 保留。替代只有逐事件监听，覆盖面反而更窄 |
 | 4 | `LivingEntity#applyArmorToDamage` 注入 | `LivingEntityArmorMixin` | 实现「部分穿甲」：N 点绕护甲，其余照常 | 必要 | 保留。原版没有部分穿甲 API；拆成多次伤害会破坏受伤事件与无敌帧 |
@@ -47,7 +47,7 @@
 | --- | --- | --- |
 | `applyArmorToDamage` 签名变化 | Yarn 映射或原版重构 | 编译期直接失败，不会静默 |
 | `playSound(Lnet/minecraft/sound/SoundEvent;FF)V` 描述符变化 | 同上 | 编译期失败（`@Inject` 找不到方法） |
-| `LlamaEntity` 行为调整（商队、繁殖、骑乘） | 版本升级 | 已 `goalSelector.clear` + 覆写年龄/繁殖接口，回归面收敛在 `YaoYongshouEntity` 末尾 |
+| 羊驼行为调整（商队、繁殖、骑乘） | 版本升级 | 阶段五换基类后这些接口随羊驼一起消失；仍保留 `goalSelector` 清空，并让 `interactMob` 返回 `PASS` |
 | `Vibrations` 接口调整 | 版本升级 | 仅 `YaoVibrationCallback` 一处实现 |
 | 版本区间只写验证范围（`minecraft >=1.21.1 <1.21.2`），`fabric-api` 无上界 | 玩家装到 1.21.2+ 时会被拒载 | 已缓解：加载期直接拒绝，不会装上去才崩；`fabric-api` 仍靠下界 |
 | 客户端资源复用原版（zombie 贴图、`EntityModelLayers.ZOMBIE`、llama/warden 音效事件） | 原版改名或改路径 | 未缓解：资源校验只查 JSON 语法与语言键，不查原版资源存在性；失效表现为粉黑格/无声 |

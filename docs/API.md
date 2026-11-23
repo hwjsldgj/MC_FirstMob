@@ -64,13 +64,13 @@ public class Hush implements ModInitializer {
 
 ### 3.2 `YaoYongshouEntity`
 
-`public class YaoYongshouEntity extends LlamaEntity implements Vibrations`
+`public class YaoYongshouEntity extends PathAwareEntity implements Vibrations, RangedAttackMob`
 
 #### 构造与静态入口
 
 | 成员 | 签名 | 契约 |
 | --- | --- | --- |
-| 构造函数 | `YaoYongshouEntity(EntityType<? extends LlamaEntity>, World)` | 由 `EntityType` 工厂调用；创建振动回调与 `EntityGameEventHandler` |
+| 构造函数 | `YaoYongshouEntity(EntityType<? extends PathAwareEntity>, World)` | 由 `EntityType` 工厂调用；创建振动回调与 `EntityGameEventHandler` |
 | 音效入口 | `public static void onPlayerSound(PlayerEntity, SoundEvent)` | 仅服务端；由 `PlayerSoundMixin` 在 `playSound` HEAD 调用 |
 | 振动接口 | `getVibrationListenerData()` / `getVibrationCallback()` | 半径 20、标签 `GameEventTags.WARDEN_CAN_LISTEN` |
 | 事件注册 | `updateEventHandler(BiConsumer<EntityGameEventHandler<?>, ServerWorld>)` | 不调用收不到 GameEvent |
@@ -82,10 +82,9 @@ public class Hush implements ModInitializer {
 | `tick()` | 服务端推进振动；每 tick 计算阶段、护甲、增益、Boss 血条；阶段 1 走听觉/愤怒，阶段 2+ 走 `updateBossCombat` |
 | `setTarget` | 拒绝同类；锁定新目标瞬间在射程内补一发口水 |
 | `damage` | 结算成功后刷新脱战计时；阶段 1 接管反击，阶段 3/4 记忆攻击者 |
-| `shootAt` | 客户端/5 格内不发射；阶段 1 的 17~24 格由声波接管 |
+| `shootAt` | `RangedAttackMob` 实现，`ProjectileAttackGoal` 调用；客户端/5 格内不发射；阶段 1 的 17~24 格由声波接管 |
 | `tryAttack` | 用 `hush:yao_melee` + 阶段穿甲结算；挥击动画与尘柱按挥击触发；命中后向上顶 0.4 |
-| `interactMob` / `createChild` / `canBreedWith` / `isBreedingItem` | 拒绝交互与繁殖；`createChild` 返回 null |
-| `isBaby` / `getBreedingAge` / `setBaby` / `setBreedingAge` | 恒成年 |
+| `interactMob` | 拒绝喂食/驯服/上鞍等交互（返回 `PASS`）；不继承羊驼，因此没有幼年、繁殖、骑乘与箱子，旧存档里的 `Tame`/`Variant` 等标签会被忽略 |
 | `getXpToDrop` | 500 |
 | `getAttackAnimationProgress(float)` | 0 = 待机，0~1 = 挥击进度，按渲染端 age 插值 |
 | `writeCustomDataToNbt` / `readCustomDataFromNbt` | 只存 `BossForm`、`BossFormDormant`；阶段按血量重算 |
@@ -226,7 +225,7 @@ Loom 1.15 在 `remapJar` 阶段重映射方法名，**不需要 refmap**。
 | **实验** | `onPlayerSound`、公开覆写方法时序、刷怪蛋模型、渲染器、阶段数值 | 可调整，需同步 SPEC/API |
 | **内部** | 私有字段与常量、Goal 组合、日志文案、`DEBUG` | 可自由改动 |
 
-- 仅支持 Minecraft 1.21.1；升级游戏版本需重新核对 `LlamaEntity`、`ProjectileAttackGoal`、`LivingEntity#applyArmorToDamage` 的签名。
+- 仅支持 Minecraft 1.21.1；升级游戏版本需重新核对 `PathAwareEntity`、`RangedAttackMob`、`ProjectileAttackGoal`、`LivingEntity#applyArmorToDamage` 的签名。
 - `fabric.mod.json` 的版本区间已收紧到验证范围：`minecraft: >=1.21.1 <1.21.2`，`fabric-api` 只有下界；未验证版本会在加载期被拒。对外不要宣称兼容 1.21.2+。
 - 客户端资源是隐式依赖：僵尸贴图、`EntityModelLayers.ZOMBIE`、`minecraft:entity.llama.*` / `warden.*` 音效事件全部由原版提供，改名或改路径即失效。
 - 不提供配置文件与网络包；行为由编译期常量决定。
@@ -262,4 +261,4 @@ Loom 1.15 在 `remapJar` 阶段重映射方法名，**不需要 refmap**。
 | 护甲穿透无效 | `LivingEntityArmorMixin` 是否注入；伤害源是否为 `YaoArmorPiercingDamageSource` |
 | 和平难度无伤害 | 伤害类型是否 `scaling: never`；声波是否用了 `minecraft:sonic_boom` |
 | 刷怪蛋有厚度/重影 | 模型是否误加 `item/generated` parent |
-| 阶段不变化 | `updateFormState` 是否每 tick 执行；最大生命是否被羊驼随机化（`initAttributes` 必须空实现） |
+| 阶段不变化 | `updateFormState` 是否每 tick 执行；最大生命是否被其他模组覆盖（基值应为 100） |

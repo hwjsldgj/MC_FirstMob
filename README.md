@@ -3,7 +3,7 @@
 [![build](https://github.com/hwjsldgj/MC_FirstMob/actions/workflows/build.yml/badge.svg)](https://github.com/hwjsldgj/MC_FirstMob/actions/workflows/build.yml)
 
 Minecraft **1.21.1 Fabric** 模组：新增生物「姚永寿」。
-它长着僵尸的样子，行为却来自羊驼——会寻路、会走近、会吐口水；血量越低越难缠，按 80% / 60% / 30% 分成四个战斗阶段，近战、口水与监守者声波逐级强化。
+它长着僵尸的样子，行为却像羊驼——会寻路、会走近、会吐口水；血量越低越难缠，按 80% / 60% / 30% 分成四个战斗阶段，近战、口水与监守者声波逐级强化。
 
 ## 支持的版本
 
@@ -116,7 +116,7 @@ $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 src/main/java/com/example/hush
 ├── Hush.java                        # 入口：注册实体 / 物品 / 音效、创造页签
 ├── entity
-│   ├── YaoYongshouEntity.java       # 羊驼行为 + 四阶段战斗 + 听觉 + 声波
+│   ├── YaoYongshouEntity.java       # 类羊驼行为 + 四阶段战斗 + 听觉 + 声波
 │   ├── YaoYongshouSpitEntity.java   # 口水弹体：伤害 / 穿甲 / 击退
 │   ├── YaoArmorPiercingDamageSource.java  # 部分无视护甲的伤害源
 │   ├── TeleportSearch.java          # 传送落点搜索（角度扇区 + 落地检查）
@@ -147,7 +147,7 @@ src/client/java/com/example/hush/client
 
 src/main/resources                  # 贴图、模型、语言、sounds.json、伤害类型
 docs/                               # SPEC / API / 文档索引
-.github/workflows/build.yml         # CI：build（单测 + 资源校验）与 smoke（假玩家 17 项）
+.github/workflows/build.yml         # CI：build（单测 + 资源校验）与 smoke（假玩家 19 项）
 ```
 
 ## 已知限制
@@ -163,6 +163,7 @@ docs/                               # SPEC / API / 文档索引
 - 客户端外观全部复用原版资源：`textures/entity/zombie/zombie.png`、`EntityModelLayers.ZOMBIE`、`minecraft:entity.llama.*` / `warden.*` 音效事件。原版一改名就是粉黑格或无声，CI 查不出来。
 - 自动化只到服务端：假玩家断言里会切生存挨一发口水，证明「命中且掉血」；具体伤害与穿甲数值、血条/音效/粒子仍需手工或客户端。
 - 注视判定按方块碰撞箱算遮挡：隔墙不算，但玻璃、树叶这类有碰撞箱的方块也会挡住；每 5 tick 采样一次，最多晚 0.25 秒才反应。
+- 基类已换成 `PathAwareEntity`：没有幼年、繁殖、骑乘与箱子；旧存档里羊驼遗留的 `Tame` / `Variant` 等标签会被忽略，实体本身可直接继续用。
 - 击杀掉落固定 **500 点**经验，非 Boss 形态也一样。
 
 ## 许可
