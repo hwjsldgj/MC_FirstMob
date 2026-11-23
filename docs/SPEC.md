@@ -238,7 +238,7 @@ Boss 阶段的走位与远程攻击统一由 `updateBossCombat` 接管，远程 
 4. 5 格内不生成口水（所有阶段）；声波蓄力开始后必须先打完这一发。
 5. 阶段 2+ 完全不听声音；阶段 2 超 32 格脱锁，阶段 3/4 永不脱锁。
 6. 阶段 4 的 17~24 格随机档：75% 口水 8 点、25% 声波 12 点，均带击退。
-7. 不存在幼年形态：`isBaby()` false、`getBreedingAge()` 0、`createChild()` null。
+7. 没有幼年、繁殖、骑乘与箱子：基类是 `PathAwareEntity`，`isBaby()` 恒 false，`interactMob` 返回 `PASS`。
 8. 音效事件必须用 `{"type": "event"}` 转发；刷怪蛋模型不能写 `"item/generated"` parent。
 9. 口水与近战的伤害类型必须 `scaling: never`；声波用 `minecraft:sonic_boom`。
 10. 部分穿甲只能由 `YaoArmorPiercingDamageSource` + `LivingEntityArmorMixin` 实现：入参先减穿甲值，护甲结算后加回；不能拆成两次 `damage()`（会触发无敌帧）。

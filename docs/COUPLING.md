@@ -14,7 +14,7 @@
 | 2 | `Vibrations` + `VibrationListener` + `GameEventTags.WARDEN_CAN_LISTEN` | `YaoYongshouEntity` | 监听玩家 `GameEvent`，是索敌与愤怒的主通道 | 必要 | 保留。自己实现等价于抄写监守者整套监听器，收益为负 |
 | 3 | `PlayerEntity#playSound` 注入 | `PlayerSoundMixin` | 补充原版未发 `GameEvent` 的音效（吃、喝、挖掘等） | 必要 | 保留。替代只有逐事件监听，覆盖面反而更窄 |
 | 4 | `LivingEntity#applyArmorToDamage` 注入 | `LivingEntityArmorMixin` | 实现「部分穿甲」：N 点绕护甲，其余照常 | 必要 | 保留。原版没有部分穿甲 API；拆成多次伤害会破坏受伤事件与无敌帧 |
-| 5 | `LlamaSpitEntity` 继承 | `YaoYongshouSpitEntity` | 口水弹道、重力、命中判定、渲染 | 可解除 | 本次**保留**：抄写需同时复制渲染器与碰撞盒，且无法离线验证；已登记为阶段三 |
+| 5 | `LlamaSpitEntity` 继承 | `YaoYongshouSpitEntity` | 口水弹道、重力、命中判定、渲染 | 可解除 | 本次**保留**：抄写需同时复制渲染器与碰撞盒，且无法离线验证；改写计划见 [ARCHITECTURE](ARCHITECTURE.md) 阶段六 |
 | 6 | `EntityType.LLAMA_SPIT` 注册表项 | `YaoYongshouEntity#shootSpit` | 口水实体类型 | 可解除 | **本次解除**：注册自有 `hush:yao_spit`，渲染仍复用原版 `LlamaSpitEntityRenderer`，物理不变 |
 | 7 | `StatusEffectInstance` / `StatusEffects` | 阶段增益、脱战回血、速度 | 增益与速度档位 | 必要 | 保留。原版效果体系是与玩家一致的唯一做法 |
 | 8 | `ServerBossBar` | Boss 血条 | 血条广播、玩家进出追踪 | 必要 | 保留 |

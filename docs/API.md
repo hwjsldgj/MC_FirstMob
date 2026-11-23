@@ -14,7 +14,7 @@
 | 入口类（client） | `com.example.hush.client.HushClient` |
 | Mixin 配置 | `hush.mixins.json`（由 `fabric.mod.json` 的 `mixins` 引用） |
 | Java 包根 | `com.example.hush` |
-| 支持版本 | Minecraft 1.21.1 / Fabric Loader ≥ 0.20.1 / Java ≥ 21 / Fabric API `*` |
+| 支持版本 | Minecraft 1.21.1 / Fabric Loader ≥ 0.20.1 / Java ≥ 21 / Fabric API ≥ 0.116.17 |
 
 ## 2. 注册表 ID
 
@@ -22,7 +22,7 @@
 
 | 注册表 | ID | Java 常量 | 说明 |
 | --- | --- | --- | --- |
-| `Registries.ENTITY_TYPE` | `hush:yao_yongshou` | `ModEntities.YAO_YONGSHOU` | `MISC`，碰撞箱 0.6 × 1.95（Boss 形态 2 倍后 1.2 × 3.9），眼高 1.62，追踪范围 10；默认 `max_health = 100`、`scale = 1`、`armor = 5`、`armor_toughness = 0`、`attack_damage = 5`、`attack_knockback = 0` |
+| `Registries.ENTITY_TYPE` | `hush:yao_yongshou` | `ModEntities.YAO_YONGSHOU` | `MISC`，碰撞箱 0.6 × 1.95（Boss 形态 2 倍后 1.2 × 3.9），眼高 1.62，追踪范围 10；默认属性（`max_health = 100`、移速/跟随/台阶/落地等）见 [SPEC §2](SPEC.md#2-实体基线) |
 | `Registries.ITEM` | `hush:yao_yongshou_spawn_egg` | `ModItems.YAO_YONGSHOU_SPAWN_EGG` | `SpawnEggItem`，蛋色 `0x8A6D3B` / `0x5C4033`，进「刷怪蛋」页签 |
 
 ### 2.2 音效事件
@@ -101,11 +101,10 @@ public class Hush implements ModInitializer {
 | `updateMovementSpeed()` | 空闲 III；阶段 1 追逐 I；阶段 2+ 追逐 II；阶段 4 >64 格追逐 III |
 | `updateBossFormRevert()` | 连续 600 tick 无目标退回普通形态 |
 | `updatePhase4Trigger(float)` | 从 >30% 跌破 ≤30% 时触发 3 分钟增益，冷却 1200 tick |
-| `isWatchedByPlayer()` | 非 Boss 形态下，32 格内有存活、非旁观玩家的视线夹角 ≤60° 时为 `true`；不依赖 Minecraft 几何的部分由 `GazeWatch` 计算 |
+| `isWatchedByPlayer()` | 非 Boss 形态下，32 格内有存活、非旁观玩家的视线夹角 ≤60° 且中间无方块碰撞箱遮挡时为 `true`；不依赖 Minecraft 几何的部分由 `GazeWatch` 计算 |
 | `shouldStandStill()` | 非 Boss、**无目标**且被注视时为 `true`（战斗中不生效）；否则仅在无目标且与玩家距离 16~32 格时为 `true` |
 | `meleeDamage()` / `meleePiercing()` / `spitDamage()` / `spitPiercing()` / `spitKnockback()` / `sonicDamage()` | 阶段数值档案：委托 `com.example.hush.combat.CombatProfile`（纯数值表，不依赖 Minecraft 类，由 `CombatProfileTest` 覆盖） |
 | `chaseStopRangeSquared()` | 追停距离：8 / 16 / 16 / 32；其余距离档由 `AttackBand` / `CombatProfile` 提供 |
-| 阶段目标解析 | `resolveBossTarget()` |
 
 阶段 1 保留：`hearVibrationFrom` / `hearSupplement` / `triggerCuriosity` / `updateAngerBehavior` / `updateSonicMode` / 反击计数。
 阶段 2+ 忽略声音。
