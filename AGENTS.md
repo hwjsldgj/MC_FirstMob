@@ -1,16 +1,13 @@
 # AGENTS.md
 
-给后续接手本项目的 AI / 协作者的工程约定。**改代码前先读这一页**；行为细节不在本文件重复，一律以 [docs/SPEC.md](docs/SPEC.md) 为准。
+给后续接手本项目的 AI / 协作者的工程约定。**改代码前先读这一页**；行为细节与数值以 [docs/SPEC.md](docs/SPEC.md) 为准，本文件只留工程约定、红线与踩坑。
 
 ## 项目
 
 Minecraft **1.21.1 Fabric** 模组「肃静」（`hush`），新增生物「姚永寿」（`hush:yao_yongshou`）与刷怪蛋。
 
-- 外形用僵尸模型 + 原版僵尸贴图；行为 `extends PathAwareEntity`（不继承羊驼），只沿用普通寻路 + 吐口水
-- 没有幼年形态，不能繁殖 / 喂食 / 驯服 / 骑乘；同类不索敌、口水不伤同类
-- 按血量分四阶段：<80% 进 Boss，60% 起完全锁定，≤30% 狂暴
-- 口水、近战、声波都按阶段给伤害；阶段 3/4 的部分伤害无视护甲
-- 刷怪蛋是自定义贴图的平面模型（无厚度、正反共面）
+- 基类 `PathAwareEntity`（不继承羊驼），保留普通寻路 + `RangedAttackMob` 吐口水；僵尸外形 + 原版僵尸贴图，刷怪蛋是自定义贴图的平面模型（单面、正反共面）
+- 四阶段按当前血量取档：<80% 进 Boss、<60% 完全锁定、≤30% 狂暴
 
 行为规则、状态机与数值：**[docs/SPEC.md](docs/SPEC.md)**；注册 ID、Java 接口、资源契约：**[docs/API.md](docs/API.md)**。
 
@@ -27,13 +24,13 @@ Minecraft **1.21.1 Fabric** 模组「肃静」（`hush`），新增生物「姚�
 $env:JAVA_HOME='D:\pcl\jdk-21'
 $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 .\gradlew.bat build     # 产物 build/libs/hush-0.1.0-SNAPSHOT.jar
-.\gradlew.bat test      # 纯逻辑单测 37 条 / 5 个类（CombatProfile / AngerLedger / GazeWatch / SonicCycle / AttackBand），不需要进入游戏
+.\gradlew.bat test      # 纯逻辑单测 37 条 / 5 个类，不需要进入游戏（类名与条数见下方代码结构）
 .\gradlew.bat runClient # 开发客户端，日志 run/logs/latest.log
 ```
 
 国内镜像已写进仓库：阿里云 Maven、BMCLAPI、腾讯云 Gradle 发行包。
 
-> 沙箱若拦截 gradle / git 对 `D:\pcl` 的写入，用 `danger-full-access` 重试一次；`write` / `edit` 工具不受影响。
+> 若 gradle / git 写入 `D:\pcl` 被拒，按提示对同一条命令提升权限重试一次；`write` / `edit` 工具不受影响。
 
 ## 代码结构
 
@@ -41,7 +38,7 @@ $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 src/main/java/com/example/hush
 ├── Hush.java                       # 入口：注册实体/物品/音效、加入创造页签
 ├── entity
-│   ├── YaoYongshouEntity.java      # 类羊驼行为 + 四阶段战斗 + 振动听觉 + 声波 + 反击（只做编排）
+│   ├── YaoYongshouEntity.java      # 普通寻路 + 吐口水 + 四阶段战斗 + 振动听觉 + 声波 + 反击（只做编排）
 │   ├── YaoYongshouSpitEntity.java  # 口水：伤害 / 穿甲 / 击退 / 同类免伤（自有类型 hush:yao_spit）
 │   ├── YaoArmorPiercingDamageSource.java  # 带穿甲值的伤害源
 │   ├── TeleportSearch.java         # 传送落点搜索（3×3×4 空地判定；只读方块）
@@ -70,7 +67,7 @@ src/test/java/com/example/hush
 │   ├── SonicCycleTest.java         # 声波蓄力/间隔节拍（5）
 │   └── AttackBandTest.java         # 距离 → 攻击档查表（5）
 └── hearing
-    └── AngerLedgerTest.java        # 愤怒、配对窗口、限频、衰减的 JUnit 用例
+    └── AngerLedgerTest.java        # 愤怒、配对窗口、限频、衰减的 JUnit 用例（12）
 src/client/java/com/example/hush/client
 ├── HushClient.java                 # 客户端入口（只注册渲染器）
 ├── YaoYongshouModel.java           # 僵尸骨架 + 僵尸手臂动画
@@ -98,7 +95,7 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 16. 愤怒每玩家独立 0~100、每 20 tick -1；`<30` 冷静、`30~99` 警觉、`100` 激怒；声波进入 100、退出 `<90`。
 17. 好奇只在阶段 1 冷静且无目标时触发：看声源 40 tick、40 tick 冷却；目标/声波/Boss 形态出现立即停止。
 18. `Vibrations` 必须在服务端每 tick 推 `Vibrations.Ticker.tick`，并在 `updateEventHandler` 把 `EntityGameEventHandler` 交给回调。
-19. 部分穿甲只能用 `YaoArmorPiercingDamageSource` + `LivingEntityArmorMixin`；**不要**拆成两次 `damage()`（第二次会被无敌帧吞掉）。
+19. 部分穿甲只能用 `YaoArmorPiercingDamageSource` + `LivingEntityArmorMixin`，**不要**拆成两次 `damage()`；原因见踩坑 2。
 20. 阶段 4 的额外增益由「跌破 30%」事件触发，冷却 1200 tick，可重复；不能每 tick 重刷。
 
 完整的判定条件、阈值与验收用例见 [docs/SPEC.md](docs/SPEC.md)。
@@ -110,7 +107,6 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 - 日志统一走 `debug(...)`，受 `DEBUG` 开关控制；不要直接 `LOGGER.info`。
 - Mixin 回调方法用 `hush$` 前缀；新增注入点要同步 `docs/API.md`。
 - 资源 ID 一律用 `Hush.id(...)` 生成，不手写字符串拼接。
-- 改 `setTarget` / `damage` / `shootAt` / `tryAttack` 时，必须同步 [docs/SPEC.md](docs/SPEC.md)。
 
 ## 踩过的坑（别改回去）
 
@@ -125,7 +121,7 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 9. **mixin 配置**：Loom 1.15 在 `remapJar` 阶段重映射方法名，**不需要 refmap**；手写 `"refmap"` 反而报错。
 10. **近战抢目标**：`CloseMeleeGoal` 必须在 `canStart` 和 `shouldContinue` 里都卡 5 格。
 11. **刷怪蛋生成幼体（换基类前）**：`isBaby`/`getBreedingAge`/`setBreedingAge` 与 `createChild` 两条路径都要堵；现在基类是 `PathAwareEntity`，没有这些接口，别再覆写或把繁殖/幼年加回来。
-12. **反击停不下来**：换基类前 `LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`，必须 `targetSelector.clear(goal -> true)`；现在基类换了，`goalSelector` 仍要清空后重建，别把原版羊驼目标加回来。
+12. **反击停不下来**：换基类前 `LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`，它会在清空目标后立刻锁回上次攻击者；现在虽已换 `PathAwareEntity`，`initGoals` 仍先 `goalSelector.clear` / `targetSelector.clear` 再重建，不要改回继承羊驼。
 13. **属性表要自己补**：换基类后 `MobEntity` 没有羊驼的移动/跟随/台阶/摔伤，`ModEntities` 必须补齐 `movement_speed 0.175`、`follow_range 40`、`step_height 1`、`safe_fall_distance 6`、`fall_damage_multiplier 0.5`；`initAttributes(Random)` 的旧覆盖要删掉（新基类没有这个方法）。
 14. **振动事件不是同一 tick 到达**：按距离延迟；音效补充靠 `accepts` 同 tick 标记 + `undoSupplementIfAny` 回滚。
 15. **阶段回退**：回血跨过阈值只降阶段与撤增益，不直接退出 Boss 形态；退出只走 600 tick 无目标。
@@ -138,8 +134,8 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 
 ## 验证流程
 
-1. `\gradlew.bat build` 必须 `BUILD SUCCESSFUL`；其中 `test` 全绿才算过（CI 跑同一条命令）。
-2. `.\gradlew.bat runClient` 起客户端；mixin 注入失败会在启动/进世界时报 `InvalidMixinException`。
+1. 按上文命令跑 `build`：必须 `BUILD SUCCESSFUL`，`test` 全绿（CI 跑同一条命令）。
+2. `runClient`：mixin 注入失败会在启动/进世界时报 `InvalidMixinException`。
 3. 测试命令：
 
    ```mcfunction
@@ -154,16 +150,13 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 
 ## 文档维护
 
-- **行为 / 数值**：以 [docs/SPEC.md](docs/SPEC.md) 为唯一事实来源；先改 SPEC，再改代码，最后补 CHANGELOG。
-- **接口 / 注册 ID / 资源键**：同步 [docs/API.md](docs/API.md)。
-- **用户可见功能**：同步 `README.md` 的「玩法速览」。
-- **每次改动**：在 `CHANGELOG.md` 对应版本下记录。
-- 正文用简体中文；ID、类名与 JSON 字段保持英文。
+- 行为 / 数值以 [docs/SPEC.md](docs/SPEC.md) 为唯一事实来源：先改 SPEC，再改代码，最后补 `CHANGELOG.md`；接口 / 注册 ID / 资源键同步 [docs/API.md](docs/API.md)；用户可见功能同步 `README.md` 的「玩法速览」；改 `setTarget` / `damage` / `shootAt` / `tryAttack` 时尤其要先改 SPEC。
+- 正文用简体中文；ID、类名与 JSON 字段保持英文；完整维护规则见 [docs/README.md](docs/README.md)。
 
 ## 协作方式
 
-- **回答精简**：先给结论与改了哪里，不铺垫、不复述需求。
-- **有歧义必须先问**：数值、触发条件、边界值、适用范围有歧义时先提问，不要猜。
+- **回答精简**：先给结论与改了哪里。
+- **有歧义先问**：数值、触发条件、边界值、适用范围不要猜。
 - **启动游戏窗口前先说明**：运行 `runClient` 前用一句话说明是否需要协助，以及 **≤15 字**的启动目的。
 - **及时提交**：一轮改动实现并验证通过后立即提交。
 
@@ -178,7 +171,7 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 | 非快进推送（强推） | 禁止 |
 | 合并方式 | 必须走 Pull Request |
 | 审查 | 0 个必需批准；必须解决全部 review 线程；未开启「最后推送需批准」；无 bypass 角色 |
-| 必需状态检查 | **已配置**：`build`（`strict_required_status_checks_policy=false`）；CI 未绿不能合 |
+| 必需状态检查 | **已配置**：`build`（`strict_required_status_checks_policy=false`）；CI 未绿不能合，job 名不可改，否则 context 对不上 |
 | 允许的合并方式 | merge / squash / rebase（实际统一用 merge，保留提交历史） |
 | 合并后删源分支 | 是（`delete_branch_on_merge=true`）；自动合并关闭 |
 
@@ -190,8 +183,8 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 
 ```powershell
 git switch -c fix/xxx                 # 大改动一律开分支
-git add -A; git commit -m "fix: ..."   # 一次提交只做一件事
-.\gradlew.bat build                   # 本地先过一遍（含单测）
+git add -A; git commit -m "fix: ..."
+# 本地 build（含单测）通过后再推
 git push -u origin fix/xxx
 gh pr create --base main               # 标题与正文用中文，写清改动/验证/未覆盖项
 # 等 PR 上的 build 检查变绿，再合并
@@ -202,8 +195,7 @@ git switch main; git pull
 - CI 工作流：`.github/workflows/build.yml`，PR 与 `main` push 都触发，JDK 21，两个 job：
   - `build`（必需检查）：JSON/语言键校验 → `./gradlew build`（含单测）→ 上传 `build/libs/hush-*.jar`（排除 `-sources.jar`）；失败时上传测试报告。
   - `smoke`：无头 `runServer`，两个阶段。① 用 `ci/smoke-datapack` 在启动后 summon 实体并打印 `HUSH_SMOKE_*` 标记，断言 Mixin 与实体注册未在加载时报错；② 标记出现后跑 `ci/fake_player_smoke.py`：下载 Carpet（`ci/fetch_carpet.py`）用 `/player` 造真玩家，共 **19 项**断言（属性表、旧羊驼 NBT 忽略、注视静止与背对对照、注视遮挡、Boss 形态、阶段 2/3/4 护甲与体型、阶段 4 增益、开火日志、口水命中掉血、脱战回血）；报告写 `build/smoke-report.txt` 并作为 artifact 上传；驱动脚本自己发 `stop`，超时由 `ci/rcon_stop.py` 兜底；只改 `docs/**` 或 `*.md` 的 PR 自动跳过该 job。
-- 本地复现冒烟：`mkdir run/smoke/datapacks` → 复制 `ci/smoke-datapack` 进去 → `python ci\fetch_carpet.py`（拉 Carpet 到 `run/mods`） → `run/eula.txt` 写 `eula=true` → `server.properties` 设 `level-name=smoke`、`enable-rcon=true`、`rcon.port=25575`、`rcon.password=hush-smoke`、`level-type=minecraft\:flat` → `$env:HUSH_DEBUG='1'` → `\gradlew.bat runServer`；看到 `HUSH_SMOKE_DONE` 后在 `ci` 目录跑 `python fake_player_smoke.py --report ..\build\smoke-report.txt --log ..\run\logs\latest.log`（它自己停服）；只想手动看时用 `python ci\rcon_cmd.py 127.0.0.1 25575 hush-smoke --file <命令文件>`。
-- 规则集已把 `build` 设为必需状态检查（`strict=false`）：改工作流时不能改 job 名，否则 context 对不上，合并会一直卡在 Expected。
+- 本地复现冒烟：`mkdir run/smoke/datapacks` → 复制 `ci/smoke-datapack` 进去 → `python ci\fetch_carpet.py`（拉 Carpet 到 `run/mods`） → `run/eula.txt` 写 `eula=true` → `server.properties` 设 `level-name=smoke`、`enable-rcon=true`、`rcon.port=25575`、`rcon.password=hush-smoke`、`level-type=minecraft\:flat` → `$env:HUSH_DEBUG='1'` → `.\gradlew.bat runServer`；看到 `HUSH_SMOKE_DONE` 后在 `ci` 目录跑 `python fake_player_smoke.py --report ..\build\smoke-report.txt --log ..\run\logs\latest.log`（它自己停服）；只想手动看时用 `python ci\rcon_cmd.py 127.0.0.1 25575 hush-smoke --file <命令文件>`。
 - PR 正文至少包含：改了什么、怎么验证的、没验证什么。
 
 ## 提交规范
@@ -211,7 +203,7 @@ git switch main; git pull
 - 中文提交信息，前缀：`feat:` / `fix:` / `chore:` / `docs:` / `ci:`
 - 提交前确认 `git status` 干净、`build` 通过
 - 一次提交只做一件事；文档改动单独用 `docs:` 提交
-- **大改动一律走分支 + PR**：行为/数值、接口、构建与依赖、批量文档这类改动，先开 `feat/*`、`fix/*`、`chore/*`、`docs/*` 分支，分支推上去开 PR，`.github/workflows/build.yml` 绿了再合
+- **大改动一律走分支 + PR**：分支前缀同提交前缀，流程见上一节。
 
 ## 已知限制
 
