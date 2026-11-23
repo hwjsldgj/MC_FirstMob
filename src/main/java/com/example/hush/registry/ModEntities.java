@@ -9,7 +9,7 @@ import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRe
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnGroup;
 import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.entity.passive.LlamaEntity;
+import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 
@@ -42,10 +42,16 @@ public final class ModEntities {
 	);
 
 	public static void register() {
-		// 羊驼属性 + 血量/普通形态体型护甲 + 近战攻击力/击退（羊驼默认没有 attack_damage，调用近战会崩）。
+		// 基础属性照抄原版羊驼（移动 0.175、跟随 40、台阶 1、落地 6、摔伤 ×0.5），
+		// 再叠加血量/普通形态体型护甲 + 近战攻击力/击退（MobEntity 默认没有 attack_damage，调用近战会崩）。
 		// 数值统一走 CombatProfile：生成时就是满血，Boss 形态只改体型/护甲，不改最大生命。
-		FabricDefaultAttributeRegistry.register(YAO_YONGSHOU, LlamaEntity.createLlamaAttributes()
+		FabricDefaultAttributeRegistry.register(YAO_YONGSHOU, MobEntity.createMobAttributes()
 				.add(EntityAttributes.GENERIC_MAX_HEALTH, CombatProfile.MAX_HEALTH)
+				.add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.175D)
+				.add(EntityAttributes.GENERIC_FOLLOW_RANGE, 40.0D)
+				.add(EntityAttributes.GENERIC_STEP_HEIGHT, 1.0D)
+				.add(EntityAttributes.GENERIC_SAFE_FALL_DISTANCE, 6.0D)
+				.add(EntityAttributes.GENERIC_FALL_DAMAGE_MULTIPLIER, 0.5D)
 				.add(EntityAttributes.GENERIC_SCALE, CombatProfile.NORMAL_SCALE)
 				.add(EntityAttributes.GENERIC_ARMOR, CombatProfile.armor(1))
 				.add(EntityAttributes.GENERIC_ARMOR_TOUGHNESS, CombatProfile.ARMOR_TOUGHNESS)

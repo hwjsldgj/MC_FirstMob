@@ -25,6 +25,7 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.ai.goal.SwimGoal;
 import net.minecraft.entity.attribute.EntityAttribute;
+import net.minecraft.entity.ai.RangedAttackMob;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.damage.DamageSource;
@@ -35,11 +36,8 @@ import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.entity.passive.AnimalEntity;
-import net.minecraft.entity.passive.LlamaEntity;
-import net.minecraft.entity.passive.PassiveEntity;
+import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.registry.entry.RegistryEntry;
@@ -60,7 +58,6 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.math.random.Random;
 import net.minecraft.world.World;
 import net.minecraft.world.event.EntityPositionSource;
 import net.minecraft.world.event.GameEvent;
@@ -70,10 +67,10 @@ import net.minecraft.world.event.listener.EntityGameEventHandler;
 import net.minecraft.world.RaycastContext;
 
 /**
- * 姚永寿：只保留僵尸的外形（由渲染器负责），行为沿用羊驼的普通寻路与吐口水，
+ * 姚永寿：只保留僵尸的外形（由渲染器负责），行为沿用普通寻路与吐口水，
  * 近距离额外加近战；阶段阈值、伤害与距离全部查 {@link CombatProfile}。
  */
-public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
+public class YaoYongshouEntity extends PathAwareEntity implements Vibrations, RangedAttackMob {
 	/** 听觉半径（格）：与羊驼吐口水的最大射程一致，20 格内都算"周围"。 */
 	private static final double HEARING_RANGE = 20.0D;
 	private static final double HEARING_RANGE_SQUARED = HEARING_RANGE * HEARING_RANGE;
@@ -216,7 +213,7 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	/** Boss 血条：标题取实体显示名，进度跟随当前血量，只发给正在追踪本实体的玩家。 */
 	private final BossBarView bossBar = new BossBarView(this.getDisplayName());
 
-	public YaoYongshouEntity(EntityType<? extends LlamaEntity> entityType, World world) {
+	public YaoYongshouEntity(EntityType<? extends PathAwareEntity> entityType, World world) {
 		super(entityType, world);
 		// Boss 不随距离自然清除：刷怪蛋/指令生成后一直留在世界里，直到被打死
 		this.setPersistent();
@@ -249,15 +246,6 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	protected void initDataTracker(DataTracker.Builder builder) {
 		super.initDataTracker(builder);
 		builder.add(ATTACK_START_AGE, -1);
-	}
-
-	/**
-	 * 羊驼在生成时会把最大生命随机成 15~30，覆盖 ModEntities 里配置的 100 点。
-	 * 姚永寿的 80% / 60% / 20% 血量阈值都按 100 点设计，这里必须保持原值。
-	 */
-	@Override
-	protected void initAttributes(Random random) {
-		// 空实现：不随机最大生命
 	}
 
 	/**
@@ -1464,53 +1452,8 @@ public class YaoYongshouEntity extends LlamaEntity implements Vibrations {
 	}
 
 	// ------------------------------------------------------------------
-	// 没有幼年形态、不能繁殖、不能驯服/骑乘
+	// 不能繁殖、不能驯服/骑乘
 	// ------------------------------------------------------------------
-
-	/**
-	 * 刷怪蛋有 5% 概率生成幼年个体（{@code PassiveEntity#initialize} 直接改 breedingAge），
-	 * 这里把年龄相关状态全部钉死为成年。
-	 */
-	@Override
-	public boolean isBaby() {
-		return false;
-	}
-
-	@Override
-	public void setBaby(boolean baby) {
-		// 姚永寿没有幼年形态
-	}
-
-	@Override
-	public int getBreedingAge() {
-		return 0;
-	}
-
-	@Override
-	public void setBreedingAge(int age) {
-		// 始终保持成年
-	}
-
-	/**
-	 * 不产生后代。
-	 * <p>{@code MobEntity.interact} 是 final 的，拿刷怪蛋右键本实体时会走
-	 * {@code MobEntity#interactWithItem} → {@code SpawnEggItem#spawnBaby} → 这里，
-	 * 而父类 {@code LlamaEntity#createChild} 会造出一只**原版小羊驼**。返回 null 即不生成。
-	 */
-	@Override
-	public LlamaEntity createChild(ServerWorld world, PassiveEntity partner) {
-		return null;
-	}
-
-	@Override
-	public boolean isBreedingItem(ItemStack stack) {
-		return false;
-	}
-
-	@Override
-	public boolean canBreedWith(AnimalEntity other) {
-		return false;
-	}
 
 	/** 不接受喂食、驯服、上鞍等交互。 */
 	@Override

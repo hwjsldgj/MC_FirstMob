@@ -12,6 +12,8 @@
 
 ### 工程
 
+- 实体基类由 `LlamaEntity` 换成 `PathAwareEntity`（阶段五）：保留 `RangedAttackMob` 吐口水，属性表照抄羊驼（移速 0.175、跟随 40、台阶 1、落地 6、摔伤 ×0.5）；去掉幼年/繁殖/骑乘/箱子语义，旧存档里的羊驼标签被忽略；冒烟新增属性表与旧 NBT 两项断言（17 → 19）
+
 - SPEC 第 12 节定案：生成方式选「结构生成」（暂定 `hush:shrine`，数据包提供），保持 `SpawnGroup.MISC` 与 `setPersistent()`；本版仍只支持刷怪蛋与 `/summon`
 - `fabric.mod.json` 的 `minecraft` 依赖由 `~1.21.1` 收紧为 `>=1.21.1 <1.21.2`：只在 1.21.1 验证过，1.21.2+ 会在加载阶段被拒绝，而不是装上去才发现 Mixin 崩
 - 构建不再写死 JDK 路径：`gradle.properties` 移除 `org.gradle.java.home`，本地与 CI 统一用 `JAVA_HOME` 选择 JDK 21

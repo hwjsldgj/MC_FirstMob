@@ -6,7 +6,7 @@
 
 Minecraft **1.21.1 Fabric** 模组「肃静」（`hush`），新增生物「姚永寿」（`hush:yao_yongshou`）与刷怪蛋。
 
-- 外形用僵尸模型 + 原版僵尸贴图；行为 `extends LlamaEntity`，只沿用普通寻路 + 吐口水
+- 外形用僵尸模型 + 原版僵尸贴图；行为 `extends PathAwareEntity`（不继承羊驼），只沿用普通寻路 + 吐口水
 - 没有幼年形态，不能繁殖 / 喂食 / 驯服 / 骑乘；同类不索敌、口水不伤同类
 - 按血量分四阶段：<80% 进 Boss，60% 起完全锁定，≤30% 狂暴
 - 口水、近战、声波都按阶段给伤害；阶段 3/4 的部分伤害无视护甲
@@ -41,7 +41,7 @@ $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 src/main/java/com/example/hush
 ├── Hush.java                       # 入口：注册实体/物品/音效、加入创造页签
 ├── entity
-│   ├── YaoYongshouEntity.java      # 羊驼行为 + 四阶段战斗 + 振动听觉 + 声波 + 反击（只做编排）
+│   ├── YaoYongshouEntity.java      # 类羊驼行为 + 四阶段战斗 + 振动听觉 + 声波 + 反击（只做编排）
 │   ├── YaoYongshouSpitEntity.java  # 口水：伤害 / 穿甲 / 击退 / 同类免伤（自有类型 hush:yao_spit）
 │   ├── YaoArmorPiercingDamageSource.java  # 带穿甲值的伤害源
 │   └── goal                        # 6 个 AI 目标，各自一个文件
@@ -82,7 +82,7 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 4. 近战距离内不生成口水（所有阶段 ≤5 格）；声波蓄力开始后必须先打完这一发。
 5. 阶段 2+ 完全不听声音；阶段 2 超 32 格脱锁，阶段 3/4 永不脱锁。
 6. 阶段 4 的 17~24 格随机档：75% 口水 8 点、25% 声波 12 点，均带击退。
-7. 不存在幼年形态：`isBaby()` false、`getBreedingAge()` 0、`createChild()` null。
+7. 没有幼年、繁殖、骑乘与箱子：基类是 `PathAwareEntity`，`isBaby()` 恒 false，`interactMob` 返回 `PASS`。
 8. 音效事件必须用 `{"type": "event"}` 转发原版事件。
 9. 刷怪蛋模型不能写 `"parent": "item/generated"`。
 10. 口水与近战的伤害类型必须 `scaling: never`；声波用 `minecraft:sonic_boom`。
@@ -113,7 +113,7 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 1. **和平难度伤害**：`PlayerEntity.damage` 会把 `isScaledWithDifficulty()` 的伤害清零，所以口水和近战都用自定义伤害类型（`yao_spit` / `yao_melee`），`"scaling": "never"`。
 2. **部分穿甲不能拆两次伤害**：同一 tick 第二次 `damage()` 会走无敌帧被吞。用 `LivingEntityArmorMixin` 在 `applyArmorToDamage` 里先减穿甲值、RETURN 时加回。
 3. **击退方向**：`LivingEntity.takeKnockback(strength, x, z)` 内部会取反，要传「从目标指向攻击者」的向量。
-4. **属性缺失**：羊驼默认没有 `GENERIC_ATTACK_DAMAGE`；`ModEntities` 里必须补（基值 5），近战才不会崩。
+4. **属性缺失**：`MobEntity` 默认没有 `GENERIC_ATTACK_DAMAGE`（换基类前是羊驼没有）；`ModEntities` 里必须补（基值 5），近战才不会崩。
 5. **渲染取值**：模型层用 `context.getPart(EntityModelLayers.ZOMBIE)`，不是 `bakeLayer`。
 6. **空闲传送**：偏角随机在 35°~145°（左右随机，**不要出现正前方**），半径 18~22 格，落点必须 3×3×4 空地；找不到就退到 48~64 格外，5 秒后重试。
 7. **攻击动画**：别依赖 `handSwingProgress`；命中时把 `ATTACK_START_AGE` 写成 `this.age`，渲染端按 `age + tickDelta` 插值。
@@ -121,8 +121,8 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 9. **mixin 配置**：Loom 1.15 在 `remapJar` 阶段重映射方法名，**不需要 refmap**；手写 `"refmap"` 反而报错。
 10. **近战抢目标**：`CloseMeleeGoal` 必须在 `canStart` 和 `shouldContinue` 里都卡 5 格。
 11. **刷怪蛋生成幼体**：`isBaby`/`getBreedingAge`/`setBreedingAge` 与 `createChild` 两条路径都要堵。
-12. **反击停不下来**：`LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`，必须 `targetSelector.clear(goal -> true)`。
-13. **最大生命被羊驼随机化**：`initAttributes(Random)` 必须空实现，否则 80/60/30% 阈值全部按随机值算。
+12. **反击停不下来**：换基类前 `LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`，必须 `targetSelector.clear(goal -> true)`；现在基类换了，`goalSelector` 仍要清空后重建，别把原版羊驼目标加回来。
+13. **属性表要自己补**：换基类后 `MobEntity` 没有羊驼的移动/跟随/台阶/摔伤，`ModEntities` 必须补齐 `movement_speed 0.175`、`follow_range 40`、`step_height 1`、`safe_fall_distance 6`、`fall_damage_multiplier 0.5`；`initAttributes(Random)` 的旧覆盖要删掉（新基类没有这个方法）。
 14. **振动事件不是同一 tick 到达**：按距离延迟；音效补充靠 `accepts` 同 tick 标记 + `undoSupplementIfAny` 回滚。
 15. **阶段回退**：回血跨过阈值只降阶段与撤增益，不直接退出 Boss 形态；退出只走 600 tick 无目标。
 16. **掉落经验固定 500**：`getXpToDrop` 直接返回 `BOSS_XP_REWARD`，非 Boss 形态也一样；要改先改 SPEC 与 README。
@@ -130,6 +130,7 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 18. **冒烟只证明口水能命中**：假玩家切生存、站在口水档，断言血量下降；具体伤害与穿甲数值受上限/抗性/击退影响，CI 上不稳定，仍要手工验。
 19. **版本区间与 Mixin 绑定**：`fabric.mod.json` 写 `>=1.21.1 <1.21.2`（只在 1.21.1 验证过），Mixin 为字符串描述符且 `required: true`；未验证版本会在加载期被拒，不要用「应该兼容」往宽了写。
 20. **冒烟世界必须是超平坦**：注视遮挡断言依赖 0,0 附近是空气；`run/server.properties` 不写 `level-type=minecraft:flat` 时玩家会埋在默认地形里，射线永远被挡、`GAZE` 不触发。CI 与本地要写同一份。
+21. **旧存档的羊驼标签**：`Tame`/`ChestedHorse`/`Variant`/`Strength`/`Age` 在新基类下没有对应字段，读档时会被忽略；冒烟用带这些标签的 `summon` 守住「不崩、血量仍 100」。
 
 ## 验证流程
 

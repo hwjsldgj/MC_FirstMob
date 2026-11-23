@@ -21,11 +21,11 @@
 | 项 | 值 |
 | --- | --- |
 | 实体 ID | `hush:yao_yongshou` |
-| Java 基类 | `LlamaEntity`（只沿用普通寻路 + 吐口水） |
+| Java 基类 | `PathAwareEntity`（不继承羊驼；寻路 + `RangedAttackMob` 吐口水） |
 | 外形 | 僵尸 `BipedEntityModel`（`EntityModelLayers.ZOMBIE`）+ 原版僵尸贴图；待机双臂前伸 |
 | 碰撞箱 | 宽 0.6 × 高 1.95，眼高 1.62；`GENERIC_SCALE = 2` 后实际 1.2 × 3.9 |
 | 生成组 / 追踪范围 | `SpawnGroup.MISC` / 10 |
-| 属性 | 羊驼属性 + `max_health = 100` + `scale = 1` + `armor = 5` + `armor_toughness = 0` + `attack_damage = 5` + `attack_knockback = 0` |
+| 属性 | `max_health = 100` + `movement_speed = 0.175` + `follow_range = 40` + `step_height = 1` + `safe_fall_distance = 6` + `fall_damage_multiplier = 0.5` + `scale = 1` + `armor = 5` + `armor_toughness = 0` + `attack_damage = 5` + `attack_knockback = 0`；移动/跟随/陡坡/摔伤与原版羊驼一致 |
 | 血量 | 100 点；生成时满血 |
 | 形态 | 普通（阶段 1）⇄ Boss（阶段 2~4）；Boss 形态 `scale = 2`、显示 Boss 血条 |
 | 常驻 | `setPersistent()`：只能被打死或指令移除 |

@@ -86,6 +86,12 @@ class Smoke:
         match = re.search(r"is\s+(-?[\d.]+)", out)
         return float(match.group(1)) if match else float("nan")
 
+    def attribute_base(self, name: str) -> float:
+        """基础值（不含速度药水等修正），用来验属性表本身。"""
+        out = self.command(f"attribute {ENTITY} minecraft:generic.{name} base get")
+        numbers = re.findall(r"-?\d+\.\d+", out)
+        return float(numbers[-1]) if numbers else float("nan")
+
     def has_effect(self, effect: str) -> bool:
         # 不猜 NBT 路径（不同版本键名不同），直接取整份实体 NBT 找效果名
         out = self.command(f"data get entity {ENTITY}")
@@ -97,6 +103,7 @@ class Smoke:
         self.rcon = Rcon(self.args.host, self.args.port, self.args.password)
         try:
             self.setup()
+            self.scenario_attributes()
             self.scenario_freeze()
             self.scenario_phases()
             self.scenario_combat()
@@ -137,6 +144,32 @@ class Smoke:
 
     def player_online(self) -> bool:
         return PLAYER in self.command("list")
+
+    def scenario_attributes(self) -> None:
+        """换基类后属性表要与原版羊驼一致；旧存档里的羊驼标签也要被安全忽略。"""
+        time.sleep(1)
+        hp = self.attribute_base("max_health")
+        speed = self.attribute_base("movement_speed")
+        follow = self.attribute_base("follow_range")
+        self.check(
+            "base attributes (hp 100 / speed 0.175 / follow 40)",
+            hp == 100.0 and abs(speed - 0.175) < 1e-6 and follow == 40.0,
+            f"hp={hp} speed={speed} follow={follow}",
+        )
+        # 旧版（羊驼基类）存档会带 Tame/ChestedHorse/Variant/Strength/Age；换基类后这些标签
+        # 没有对应字段，必须被安全忽略，而且血量仍是 100。
+        out = self.command(
+            f"execute positioned 20 {SURFACE_Y + 1} 20 run summon hush:yao_yongshou ~ ~ ~ "
+            '{Tame:1b,ChestedHorse:1b,Variant:2,Strength:5,Age:-24000,Tags:["hush_legacy"]}'
+        )
+        ok = "Summoned" in out
+        if ok:
+            health_line = self.command("data get entity @e[tag=hush_legacy,limit=1] Health")
+            match = re.search(r"data:\s*(-?[\d.]+)", health_line)
+            ok = match is not None and float(match.group(1)) == 100.0
+            out = health_line
+        self.check("legacy llama NBT ignored", ok, out)
+        self.command("kill @e[tag=hush_legacy]")
 
     def scenario_freeze(self) -> None:
         """注视判定要有可观测证据：冻结时打 `GAZE freeze`，背对时不打。
