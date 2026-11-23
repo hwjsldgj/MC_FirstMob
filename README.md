@@ -59,17 +59,9 @@ Minecraft **1.21.1 Fabric** 模组：新增生物「姚永寿」。
 - **追击**：>64 格只追不打，速度再 +1。
 - **额外增益**：每次从 30% 以上跌破 30%，获得抗性 I、生命恢复 II、速度 I、力量 I、伤害吸收 I，持续 **3 分钟**；冷却 **1 分钟**，可重复触发。
 
-### 距离速查
+### 逐格距离
 
-| 距离 | 阶段 1 | 阶段 2 | 阶段 3 | 阶段 4 |
-| --- | --- | --- | --- | --- |
-| ≤5 | 近战 5 | 近战 8 | 近战 8（4 穿甲） | 近战 10（5 穿甲） |
-| 6~16 | 口水 3 | 口水 4 + 击退 I | 口水 5（3 穿甲）+ 击退 II | 口水 6（4 穿甲）+ 击退 II |
-| 17~24 | 口水 3；愤怒时声波 6 | 声波 8 | 声波 10 | 随机口水 8 / 声波 12 |
-| 25~32 | — | 声波 8 | 声波 10 | 声波 14 |
-| 33~48 | — | — | 声波 10 | 声波 14 |
-| 49~64 | — | — | — | 声波 14 |
-| >64 | — | — | 只追 | 只追（速度 +1） |
+阶段 1 的两套远程规则按愤怒档位切换，其余阶段按距离直接选攻击方式。完整距离表、穿甲与击退数值见 [SPEC §6 数值总表](docs/SPEC.md#6-数值总表)，这里不再重复。
 
 ### 与阶段无关
 
@@ -77,7 +69,7 @@ Minecraft **1.21.1 Fabric** 模组：新增生物「姚永寿」。
 | --- | --- |
 | 外形 | 僵尸模型与贴图；近战命中抬臂抡下 0.5 秒 |
 | 同类 | 不互相索敌，口水不伤害同类 |
-| 幼年 / 繁殖 | 没有幼年形态，不能繁殖、喂食或驯服 |
+| 幼年 / 繁殖 / 骑乘 | 没有幼年形态，不能繁殖、喂食、驯服、骑乘，也没有箱子 |
 | 常驻 | 不会因玩家跑远被自然清除 |
 | 掉落经验 | 玩家击杀掉落 **500 点** |
 | 字幕 | 环境音、受伤、死亡、吐口水、蓄力、声波都有「姚永寿：…」字幕 |
@@ -112,53 +104,12 @@ $env:GRADLE_USER_HOME='D:\pcl\gradle_cache'
 
 ## 目录结构
 
-```
-src/main/java/com/example/hush
-├── Hush.java                        # 入口：注册实体 / 物品 / 音效、创造页签
-├── entity
-│   ├── YaoYongshouEntity.java       # 类羊驼行为 + 四阶段战斗 + 听觉 + 声波
-│   ├── YaoYongshouSpitEntity.java   # 口水弹体：伤害 / 穿甲 / 击退
-│   ├── YaoArmorPiercingDamageSource.java  # 部分无视护甲的伤害源
-│   ├── TeleportSearch.java          # 传送落点搜索（角度扇区 + 落地检查）
-│   └── goal                         # 6 个 AI 目标：近战、锁定射击、游走、张望、好奇
-├── combat
-│   ├── CombatProfile.java           # 四阶段纯数值表（阈值 / 护甲 / 伤害 / 距离 / 节奏）
-│   ├── AttackBand.java              # 距离 → 攻击档
-│   ├── SonicCycle.java              # 声波蓄力 / 间隔节拍
-│   └── GazeWatch.java               # 注视判定
-├── hearing
-│   └── AngerLedger.java             # 愤怒累积、限频、配对窗口
-├── visual
-│   ├── BossBarView.java             # Boss 血条：追踪 / 节流 / 狂暴配色
-│   └── EntityParticles.java         # 粒子表现
-├── mixin
-│   ├── PlayerSoundMixin.java        # 补未记录音效
-│   └── LivingEntityArmorMixin.java  # 部分穿甲结算
-└── registry                         # 实体类型、刷怪蛋、音效事件
-
-src/test/java/com/example/hush       # JUnit 5：37 条 / 5 个类
-├── combat（CombatProfile / AttackBand / SonicCycle / GazeWatch）
-└── hearing（AngerLedger）
-
-src/client/java/com/example/hush/client
-├── HushClient.java                  # 客户端入口
-├── YaoYongshouModel.java            # 僵尸骨架 + 抡臂动画
-└── YaoYongshouRenderer.java         # 渲染器
-
-src/main/resources                  # 贴图、模型、语言、sounds.json、伤害类型
-docs/                               # SPEC / API / 文档索引
-.github/workflows/build.yml         # CI：build（单测 + 资源校验）与 smoke（假玩家 19 项）
-```
+源码树、测试分布与文件职责见 [AGENTS 的「代码结构」](AGENTS.md#代码结构)；这里不再重复，避免两份树各自漂移。
 
 ## 已知限制
 
 - 本版不会自然生成：只能用刷怪蛋或 `/summon`；结构生成的方案已定（见 [SPEC §12](docs/SPEC.md)），尚未实现。
-- 刷怪蛋是单面平面模型：侧视是一条线，背面看不到图案。
-- 创造模式玩家免疫伤害：口水只击退；近战与声波不结算伤害，近战动作与尘柱照常播放。
-- 声波沿用原版 `minecraft:sonic_boom`（`scaling: always`），和平难度伤害归零。
-- 部分穿甲依赖对 `LivingEntity#applyArmorToDamage` 的 Mixin，可能与重定向该方法的模组冲突。
-- 听觉只统计玩家，且仅阶段 1 生效。
-- 改名后旧存档中的 `firstmob:` 实体不再注册。
+- 行为侧限制见 [SPEC §11](docs/SPEC.md#11-已知限制)：刷怪蛋单面模型、创造模式免疫伤害、和平难度声波归零、部分穿甲 Mixin 可能冲突、听觉只统计玩家。
 - 版本下限按验证范围写死：元数据 `minecraft` 为 `>=1.21.1 <1.21.2`；两个 Mixin 都是 `required: true`，装到未验证版本会在启动时抛 `InvalidMixinException`。
 - 客户端外观全部复用原版资源：`textures/entity/zombie/zombie.png`、`EntityModelLayers.ZOMBIE`、`minecraft:entity.llama.*` / `warden.*` 音效事件。原版一改名就是粉黑格或无声，CI 查不出来。
 - 自动化只到服务端：假玩家断言里会切生存挨一发口水，证明「命中且掉血」；具体伤害与穿甲数值、血条/音效/粒子仍需手工或客户端。

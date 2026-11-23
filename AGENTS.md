@@ -44,10 +44,12 @@ src/main/java/com/example/hush
 │   ├── YaoYongshouEntity.java      # 类羊驼行为 + 四阶段战斗 + 振动听觉 + 声波 + 反击（只做编排）
 │   ├── YaoYongshouSpitEntity.java  # 口水：伤害 / 穿甲 / 击退 / 同类免伤（自有类型 hush:yao_spit）
 │   ├── YaoArmorPiercingDamageSource.java  # 带穿甲值的伤害源
+│   ├── TeleportSearch.java         # 传送落点搜索（3×3×4 空地判定；只读方块）
 │   └── goal                        # 6 个 AI 目标，各自一个文件
 ├── hearing
 │   └── AngerLedger.java            # 愤怒 / 配对窗口 / 限频 / 衰减（纯逻辑，有单测）
 ├── visual
+│   ├── BossBarView.java            # Boss 血条：追踪 / 节流 / 狂暴配色
 │   └── EntityParticles.java        # 变身、狂怒、拖尾、扬尘粒子（只表现）
 ├── mixin
 │   ├── PlayerSoundMixin.java       # 拦 PlayerEntity#playSound，只补未记录音效
@@ -58,6 +60,8 @@ src/main/java/com/example/hush
 │   └── ModSounds.java              # 自定义音效事件（转发原版声音，换字幕）
 └── combat
     ├── CombatProfile.java          # 四阶段纯数值表（阈值/护甲/伤害/距离/节奏），有单测
+    ├── AttackBand.java             # 距离 → 攻击档（顺序即优先级），有单测
+    ├── SonicCycle.java             # 声波蓄力/间隔节拍（Boss 与阶段 1 各一个实例），有单测
     └── GazeWatch.java              # 「玩家是否注视目标」的角度/距离判定，有单测
 src/test/java/com/example/hush
 ├── combat
@@ -120,7 +124,7 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
 8. **刷怪蛋模型**：不能写 `"parent": "item/generated"`，否则按 alpha 生成挤压壳、忽略 `elements`。
 9. **mixin 配置**：Loom 1.15 在 `remapJar` 阶段重映射方法名，**不需要 refmap**；手写 `"refmap"` 反而报错。
 10. **近战抢目标**：`CloseMeleeGoal` 必须在 `canStart` 和 `shouldContinue` 里都卡 5 格。
-11. **刷怪蛋生成幼体**：`isBaby`/`getBreedingAge`/`setBreedingAge` 与 `createChild` 两条路径都要堵。
+11. **刷怪蛋生成幼体（换基类前）**：`isBaby`/`getBreedingAge`/`setBreedingAge` 与 `createChild` 两条路径都要堵；现在基类是 `PathAwareEntity`，没有这些接口，别再覆写或把繁殖/幼年加回来。
 12. **反击停不下来**：换基类前 `LlamaEntity` 的 `targetSelector` 里有 `SpitRevengeGoal`，必须 `targetSelector.clear(goal -> true)`；现在基类换了，`goalSelector` 仍要清空后重建，别把原版羊驼目标加回来。
 13. **属性表要自己补**：换基类后 `MobEntity` 没有羊驼的移动/跟随/台阶/摔伤，`ModEntities` 必须补齐 `movement_speed 0.175`、`follow_range 40`、`step_height 1`、`safe_fall_distance 6`、`fall_damage_multiplier 0.5`；`initAttributes(Random)` 的旧覆盖要删掉（新基类没有这个方法）。
 14. **振动事件不是同一 tick 到达**：按距离延迟；音效补充靠 `accepts` 同 tick 标记 + `undoSupplementIfAny` 回滚。
@@ -144,7 +148,7 @@ docs/                               # SPEC / API / COUPLING / ARCHITECTURE / BRE
    /give @s hush:yao_yongshou_spawn_egg
    ```
 
-4. 按 [docs/SPEC.md 的验收用例](docs/SPEC.md#10-验收用例) 逐条回归，至少覆盖：阶段 1 听觉、24/32 格脱锁、阶段 3/4 永不脱锁、各阶段伤害与穿甲、阶段 4 随机档与增益冷却、回血降档、300 秒退回、刷怪蛋、同类、和平难度、创造模式近战。
+4. 按 [docs/SPEC.md 的验收用例](docs/SPEC.md#10-验收用例) 逐条回归，至少覆盖：阶段 1 听觉、24/32 格脱锁、阶段 3/4 永不脱锁、各阶段伤害与穿甲、阶段 4 随机档与增益冷却、回血降档、30 秒（600 tick）退回、刷怪蛋、同类、和平难度、创造模式近战。
 
 > 测试世界里常残留多只姚永寿（日志会出现多个 `[Yao#id]`），先 `/kill` 再测。
 
@@ -197,9 +201,9 @@ git switch main; git pull
 
 - CI 工作流：`.github/workflows/build.yml`，PR 与 `main` push 都触发，JDK 21，两个 job：
   - `build`（必需检查）：JSON/语言键校验 → `./gradlew build`（含单测）→ 上传 `build/libs/hush-*.jar`（排除 `-sources.jar`）；失败时上传测试报告。
-  - `smoke`：无头 `runServer`，两个阶段。① 用 `ci/smoke-datapack` 在启动后 summon 实体并打印 `HUSH_SMOKE_*` 标记，断言 Mixin 与实体注册未在加载时报错；② 标记出现后跑 `ci/fake_player_smoke.py`：下载 Carpet（`ci/fetch_carpet.py`）用 `/player` 造真玩家，逐项断言注视静止、Boss 形态、阶段 2/3/4 护甲与体型、阶段 4 增益、吐口水、脱战回血；报告写 `build/smoke-report.txt` 并作为 artifact 上传；驱动脚本自己发 `stop`，超时由 `ci/rcon_stop.py` 兜底；只改 `docs/**` 或 `*.md` 的 PR 自动跳过该 job。
+  - `smoke`：无头 `runServer`，两个阶段。① 用 `ci/smoke-datapack` 在启动后 summon 实体并打印 `HUSH_SMOKE_*` 标记，断言 Mixin 与实体注册未在加载时报错；② 标记出现后跑 `ci/fake_player_smoke.py`：下载 Carpet（`ci/fetch_carpet.py`）用 `/player` 造真玩家，共 **19 项**断言（属性表、旧羊驼 NBT 忽略、注视静止与背对对照、注视遮挡、Boss 形态、阶段 2/3/4 护甲与体型、阶段 4 增益、开火日志、口水命中掉血、脱战回血）；报告写 `build/smoke-report.txt` 并作为 artifact 上传；驱动脚本自己发 `stop`，超时由 `ci/rcon_stop.py` 兜底；只改 `docs/**` 或 `*.md` 的 PR 自动跳过该 job。
 - 本地复现冒烟：`mkdir run/smoke/datapacks` → 复制 `ci/smoke-datapack` 进去 → `python ci\fetch_carpet.py`（拉 Carpet 到 `run/mods`） → `run/eula.txt` 写 `eula=true` → `server.properties` 设 `level-name=smoke`、`enable-rcon=true`、`rcon.port=25575`、`rcon.password=hush-smoke`、`level-type=minecraft\:flat` → `$env:HUSH_DEBUG='1'` → `\gradlew.bat runServer`；看到 `HUSH_SMOKE_DONE` 后在 `ci` 目录跑 `python fake_player_smoke.py --report ..\build\smoke-report.txt --log ..\run\logs\latest.log`（它自己停服）；只想手动看时用 `python ci\rcon_cmd.py 127.0.0.1 25575 hush-smoke --file <命令文件>`。
-- 规则集已把 `build` 设为必需状态检查（`strict=false`）：PR 的 `build` 没通过就不能合；改工作流时不能改 job 名，否则规则集的 context 对不上，合并会一直卡在 Expected。
+- 规则集已把 `build` 设为必需状态检查（`strict=false`）：改工作流时不能改 job 名，否则 context 对不上，合并会一直卡在 Expected。
 - PR 正文至少包含：改了什么、怎么验证的、没验证什么。
 
 ## 提交规范
@@ -207,8 +211,7 @@ git switch main; git pull
 - 中文提交信息，前缀：`feat:` / `fix:` / `chore:` / `docs:` / `ci:`
 - 提交前确认 `git status` 干净、`build` 通过
 - 一次提交只做一件事；文档改动单独用 `docs:` 提交
-- **大改动一律走分支 + PR**：行为/数值、接口、构建与依赖、批量文档这类改动，先开 `feat/*`、`fix/*`、`chore/*`、`docs/*` 分支，分支推上去开 PR，`.github/workflows/build.yml` 绿了再合；`main` 只接受 PR 合并，不在本地直接提交大改动
-- 合并回 `main` 必须走 GitHub PR，不在本地直接 merge
+- **大改动一律走分支 + PR**：行为/数值、接口、构建与依赖、批量文档这类改动，先开 `feat/*`、`fix/*`、`chore/*`、`docs/*` 分支，分支推上去开 PR，`.github/workflows/build.yml` 绿了再合
 
 ## 已知限制
 
